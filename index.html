@@ -643,6 +643,68 @@ const filesToCache = [
 let voices = [];
 const isSpeechSupported = !!window.speechSynthesis && typeof SpeechSynthesisUtterance !== 'undefined';
 
+// Service Worker logic embedded in the HTML
+const swCode = `
+const cacheName = '${cacheName}';
+const filesToCache = ${JSON.stringify(filesToCache)};
+
+self.addEventListener('install', (event) => {
+    event.waitUntil(
+        caches.open(cacheName).then((cache) => {
+            return Promise.all(
+                filesToCache.map((url) => {
+                    return fetch(url, { mode: 'no-cors' }).then((response) => {
+                        if (!response.ok) {
+                            console.error('Failed to cache:', url);
+                            return;
+                        }
+                        return cache.put(url, response);
+                    }).catch((error) => {
+                        console.error('Error caching:', url, error);
+                    });
+                })
+            ).then(() => self.skipWaiting());
+        })
+    );
+});
+
+self.addEventListener('activate', (event) => {
+    event.waitUntil(
+        caches.keys().then((cacheNames) => {
+            return Promise.all(
+                cacheNames.map((name) => {
+                    if (name !== cacheName) {
+                        return caches.delete(name);
+                    }
+                })
+            );
+        }).then(() => self.clients.claim())
+    );
+});
+
+self.addEventListener('fetch', (event) => {
+    event.respondWith(
+        caches.match(event.request).then((cachedResponse) => {
+            if (cachedResponse) {
+                return cachedResponse;
+            }
+            return fetch(event.request).then((response) => {
+                if (!response || response.status !== 200 || response.type !== 'basic') {
+                    return response;
+                }
+                const responseToCache = response.clone();
+                caches.open(cacheName).then((cache) => {
+                    cache.put(event.request, responseToCache);
+                });
+                return response;
+            }).catch(() => {
+                return caches.match('./index.html');
+            });
+        })
+    );
+});
+`;
+
 function showProgress(message, percentage) {
     const progressContainer = document.getElementById('progress-container');
     const progressFill = document.getElementById('progress-fill');
@@ -682,7 +744,7 @@ async function cacheFiles() {
 
             for (const file of filesToFetch) {
                 try {
-                    const response = await fetch(file);
+                    const response = await fetch(file, { mode: 'no-cors' });
                     if (!response.ok) throw new Error(`Failed to fetch ${file}`);
                     await cache.put(file, response.clone());
                     loadedFiles++;
@@ -706,7 +768,7 @@ async function loadResource(url) {
         const cachedResponse = await cache.match(url);
         if (cachedResponse) return cachedResponse;
 
-        const response = await fetch(url);
+        const response = await fetch(url, { mode: 'no-cors' });
         if (!response.ok) throw new Error(`Failed to fetch ${url}`);
         await cache.put(url, response.clone());
         return response;
@@ -1723,6 +1785,19 @@ async function initializeApp() {
         localStorage.setItem('customDictionary', JSON.stringify({}));
     }
 
+    // Register Service Worker inline
+    if ('serviceWorker' in navigator) {
+        try {
+            const blob = new Blob([swCode], { type: 'application/javascript' });
+            const blobURL = URL.createObjectURL(blob);
+            const registration = await navigator.serviceWorker.register(blobURL);
+            console.log('Service Worker registered with scope:', registration.scope);
+            URL.revokeObjectURL(blobURL);
+        } catch (error) {
+            console.error('Service Worker registration failed:', error);
+        }
+    }
+
     const isCached = localStorage.getItem('cachePopulated') === 'true' && await isCachePopulated();
     
     if (!isCached) {
@@ -1737,16 +1812,6 @@ async function initializeApp() {
         } catch (error) {
             console.error('Error initializing databases offline:', error);
             document.getElementById('results').innerHTML = 'Error loading dictionaries offline. Please ensure all files are available locally.';
-        }
-    }
-
-    // Register Service Worker
-    if ('serviceWorker' in navigator) {
-        try {
-            const registration = await navigator.serviceWorker.register('./sw.js');
-            console.log('Service Worker registered with scope:', registration.scope);
-        } catch (error) {
-            console.error('Service Worker registration failed:', error);
         }
     }
 
