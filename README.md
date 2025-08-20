@@ -32,7 +32,7 @@ After the first load, this dictionary works **fully offline**! 📴 No internet?
 
 ## Get Started
 Ready to dive into the world of Odia words? Visit the dictionary now and start exploring! 🚀  
-👉 [**Explore the Best Odia Dictionary**](https://abhayattcc.github.io/Best-odia-dictionary-/)
+👉 [**Explore the Best Odia Dictionary**](https://abhayattcc.github.io/Best-odia-dictionary/)
 
 ## Contribute
 Want to make this dictionary even better? Fork this repository, add your improvements, and submit a pull request! Let’s make learning Odia fun and accessible for everyone! 🌟
