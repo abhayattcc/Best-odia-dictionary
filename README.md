@@ -27,7 +27,7 @@ Upload and read **PDFs or text files** directly on the website. 📄 If you enco
 ## OCR for Image PDFs
 Convert **image-based PDFs** into readable text with our **OCR (Optical Character Recognition)** feature. 🖼️ Save the text for your work or open it in the reader section for seamless learning. 😎
 
-## Offline htmal page Mode
+## Offline Mode
 After the first load, this dictionary works **fully offline**! 📴 No internet? No problem! Access all features anytime, anywhere. Download the offline version [👉🏻here👈🏻](https://drive.usercontent.google.com/download?id=1Dp_WxjS81lVy5GVslwRFqtWXBnvNfNUL&export=download&confirm=yes)
 
 ## Offline apk but need unknown source permision to install
