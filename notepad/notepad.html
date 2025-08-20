@@ -1,0 +1,1402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kids Notepad</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Comic Sans MS', 'Arial', sans-serif;
+            background-color: #f0f8ff;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            width: 100vw;
+            position: relative;
+        }
+        .tabs {
+            display: flex;
+            background-color: #ff69b4;
+            padding: 10px;
+            width: 100%;
+            z-index: 2;
+            position: sticky;
+            top: 0;
+        }
+        .tab {
+            flex: 1;
+            text-align: center;
+            padding: 12px;
+            color: white;
+            cursor: pointer;
+            font-size: 20px;
+            border-radius: 8px;
+            margin: 0 5px;
+            background-color: #ff1493;
+            transition: background-color 0.3s;
+        }
+        .tab.active {
+            background-color: #c71585;
+        }
+        .tab:hover {
+            background-color: #db7093;
+        }
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            background-color: #fffacd;
+            padding: 10px;
+            border-bottom: 2px solid #ffd700;
+            gap: 8px;
+            width: 100%;
+            justify-content: center;
+            z-index: 2;
+        }
+        .toolbar-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .toolbar button {
+            background-color: #7fffd4;
+            border: 2px solid #20b2aa;
+            border-radius: 8px;
+            padding: 8px;
+            font-size: 28px;
+            cursor: pointer;
+            width: 56px;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.3s;
+        }
+        .toolbar button:hover {
+            background-color: #40e0d0;
+        }
+        .toolbar button.active {
+            background-color: #20b2aa;
+        }
+        .content {
+            flex: 1;
+            padding: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            overflow: auto;
+            position: relative;
+        }
+        .content.fullscreen {
+            padding: 10px;
+            width: 100%;
+            height: calc(100vh - 60px); /* Adjust height to account for tab bar */
+            overflow: auto;
+        }
+        #textEditor, #drawingCanvas, #overlayCanvas, #savedTextList {
+            width: 100%;
+            height: 100%;
+            border-radius: 8px;
+            background-color: #fff;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        #textEditor {
+            border: none;
+            resize: none;
+            font-size: 16px;
+            padding: 10px;
+            white-space: pre-wrap;
+            width: 100%;
+            height: 100%;
+        }
+        #drawingCanvas, #overlayCanvas {
+            touch-action: pinch-zoom;
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            width: 100%;
+            height: 100%;
+            transition: opacity 0.5s ease-out; /* Animation for erase effect */
+        }
+        #overlayCanvas {
+            background: transparent;
+            z-index: 1;
+        }
+        .pen-options {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .pen-options select {
+            padding: 8px;
+            font-size: 14px;
+            border-radius: 8px;
+            border: 2px solid #20b2aa;
+            background-color: #f0fff0;
+        }
+        .hidden {
+            display: none;
+        }
+        #savedTextList {
+            overflow-y: auto;
+            padding: 10px;
+        }
+        .saved-text-item {
+            padding: 10px;
+            border-bottom: 2px solid #ffd700;
+            cursor: pointer;
+            font-size: 16px;
+            background-color: #f0fff0;
+            border-radius: 8px;
+            margin-bottom: 5px;
+        }
+        .saved-text-item:hover {
+            background-color: #e6e6fa;
+        }
+        .page-controls {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .page-controls select, .page-controls button {
+            padding: 8px;
+            font-size: 14px;
+            border-radius: 8px;
+            border: 2px solid #20b2aa;
+            background-color: #f0fff0;
+            cursor: pointer;
+        }
+        .back-button, .view-trash-button {
+            position: absolute;
+            padding: 8px;
+            font-size: 14px;
+            border-radius: 8px;
+            border: 2px solid #20b2aa;
+            background-color: #f0fff0;
+            cursor: pointer;
+        }
+        .back-button {
+            top: 10px;
+            left: 10px;
+        }
+        .view-trash-button {
+            top: 10px;
+            right: 10px;
+        }
+        #progressBarContainer {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            max-width: 400px;
+            background-color: #fffacd;
+            border: 2px solid #ffd700;
+            border-radius: 8px;
+            padding: 10px;
+            display: none;
+            z-index: 1000;
+        }
+        #progressBar {
+            width: 100%;
+            height: 20px;
+            background-color: #7fffd4;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        #progressFill {
+            height: 100%;
+            background-color: #20b2aa;
+            width: 0%;
+            transition: width 0.2s ease-in-out;
+        }
+        #progressText {
+            text-align: center;
+            font-size: 14px;
+            margin-top: 5px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="tabs" id="tabs">
+            <div class="tab active" onclick="toggleSection('text')">📝 Write</div>
+            <div class="tab" onclick="toggleSection('drawing')">🎨 Draw</div>
+        </div>
+        <div class="toolbar" id="toolbar">
+            <div class="toolbar-group" id="textTools">
+                <button title="Undo" onclick="undoText()">↺</button>
+                <button title="Redo" onclick="redoText()">↻</button>
+                <button title="Find and Replace" onclick="findAndReplace()">🔎</button>
+                <button title="Select All" onclick="selectAll()">📄</button>
+                <button title="Copy" onclick="copyText()">📋</button>
+                <button title="Erase Text" onclick="eraseText()">🧹</button>
+                <button title="Save Text" onclick="saveText()">💾</button>
+                <button title="Show Saved Texts" onclick="showSavedTexts()">📚</button>
+                <button title="Delete Saved Text" onclick="deleteSavedText()">🗑️</button>
+                <button title="Restore Text" onclick="restoreText()">🔄</button>
+                <button title="Permanently Delete" onclick="permanentlyDelete()">🗑️🚫</button>
+                <button title="Open File" onclick="openFile()">📜</button>
+                <button title="Export Text" onclick="exportText()">📤</button>
+            </div>
+            <div class="toolbar-group hidden" id="drawingTools">
+                <button title="Toggle Drawing" id="drawButton" onclick="toggleDrawing()">✍️</button>
+                <button title="Eraser" id="eraseButton" onclick="toggleErase()">🧹</button>
+                <button title="Reset Position" onclick="resetPosition()">🔄</button>
+                <button title="New Page" onclick="newCanvasPage()">➕</button>
+                <button title="Clear Current Page" onclick="clearCurrentPage()">🗑️</button>
+                <button title="Undo" onclick="undo()">↺</button>
+                <button title="Redo" onclick="redo()">↻</button>
+                <button title="Fill Canvas" onclick="fillCanvas()">🎨</button>
+                <button title="Save as JPG" onclick="saveAsJPG()">🖼️</button>
+                <button title="Share as PDF" onclick="shareAsPDF()">📄</button>
+                <div class="pen-options">
+                    <select id="penWidth" onchange="setPenWidth(this.value)">
+                        <option value="1">Thin</option>
+                        <option value="2">Medium</option>
+                        <option value="3">Thick</option>
+                        <option value="5">Very Thick</option>
+                    </select>
+                    <select id="penColor" onchange="setPenColor(this.value)">
+                        <option value="#ff0000">Red</option>
+                        <option value="#0000ff">Blue</option>
+                        <option value="#008000">Green</option>
+                        <option value="#ffff00">Yellow</option>
+                        <option value="#ff69b4">Pink</option>
+                        <option value="#800080">Purple</option>
+                        <option value="#ffa500">Orange</option>
+                        <option value="#000000">Black</option>
+                    </select>
+                </div>
+                <div class="page-controls">
+                    <button onclick="previousPage()">Previous</button>
+                    <select id="pageSelector" onchange="renderPage(this.value)"></select>
+                    <button onclick="nextPage()">Next</button>
+                </div>
+            </div>
+        </div>
+        <div class="content" id="content">
+            <textarea id="textEditor"></textarea>
+            <canvas id="drawingCanvas" class="hidden"></canvas>
+            <canvas id="overlayCanvas" class="hidden"></canvas>
+            <div id="savedTextList" class="hidden"></div>
+            <div id="progressBarContainer" class="hidden">
+                <div id="progressText">Loading PDF...</div>
+                <div id="progressBar">
+                    <div id="progressFill"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script>
+        // Inline Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                const swCode = `
+                    const CACHE_NAME = 'notepad-cache-v9';
+                    const urlsToCache = [
+                        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js',
+                        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.worker.min.js',
+                        'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+                    ];
+
+                    self.addEventListener('install', event => {
+                        event.waitUntil(
+                            caches.open(CACHE_NAME)
+                                .then(cache => cache.addAll(urlsToCache))
+                                .then(() => self.skipWaiting())
+                                .catch(err => console.error('Cache open failed:', err))
+                        );
+                    });
+
+                    self.addEventListener('activate', event => {
+                        event.waitUntil(
+                            caches.keys().then(cacheNames => {
+                                return Promise.all(
+                                    cacheNames.filter(name => name !== CACHE_NAME)
+                                        .map(name => caches.delete(name))
+                                );
+                            }).then(() => self.clients.claim())
+                        );
+                    });
+
+                    self.addEventListener('fetch', event => {
+                        event.respondWith(
+                            caches.match(event.request)
+                                .then(response => {
+                                    if (response) {
+                                        return response;
+                                    }
+                                    return fetch(event.request).then(networkResponse => {
+                                        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+                                            return networkResponse;
+                                        }
+                                        const responseToCache = networkResponse.clone();
+                                        caches.open(CACHE_NAME).then(cache => {
+                                            cache.put(event.request, responseToCache);
+                                        });
+                                        return networkResponse;
+                                    }).catch(() => {
+                                        console.error('Fetch failed for:', event.request.url);
+                                        return new Response('Resource not available offline', { status: 404 });
+                                    });
+                                })
+                        );
+                    });
+                `;
+                const blob = new Blob([swCode], { type: 'application/javascript' });
+                const url = URL.createObjectURL(blob);
+                navigator.serviceWorker.register(url)
+                    .then(reg => console.log('Service Worker registered'))
+                    .catch(err => console.error('Service Worker registration failed:', err));
+            });
+        }
+
+        // Set PDF.js worker source
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.worker.min.js';
+
+        let currentSection = 'text';
+        let isTextCollapsed = false;
+        let isDrawingCollapsed = false;
+        let canvasPages = [];
+        let currentPageIndex = 0;
+        let isDrawing = false;
+        let isErasing = false;
+        let penWidth = 2;
+        let penColor = '#000000';
+        let savedTexts = {};
+        let deletedTexts = {};
+        let canvasContext = null;
+        let overlayContext = null;
+        let undoStack = [];
+        let redoStack = [];
+        let textUndoStack = [];
+        let textRedoStack = [];
+        let textChangeTimeout = null;
+        let strokePoints = [];
+        let currentPdf = null;
+        let pdfPageCount = 0;
+        let swipeStartX = 0;
+        let swipeStartTime = 0;
+        let swipePath = [];
+
+        // Initialize canvases
+        const canvas = document.getElementById('drawingCanvas');
+        const overlayCanvas = document.getElementById('overlayCanvas');
+        canvasContext = canvas.getContext('2d', { willReadFrequently: true });
+        overlayContext = overlayCanvas.getContext('2d', { willReadFrequently: true });
+        canvasPages = [document.createElement('canvas')];
+        currentPageIndex = 0;
+        resizeCanvas();
+
+        // Initialize text editor
+        const textEditor = document.getElementById('textEditor');
+        textUndoStack.push(textEditor.value);
+
+        // Drawing and erasing toggle
+        function toggleDrawing() {
+            isDrawing = !isDrawing;
+            isErasing = false;
+            const drawButton = document.getElementById('drawButton');
+            const eraseButton = document.getElementById('eraseButton');
+            drawButton.classList.toggle('active', isDrawing);
+            eraseButton.classList.remove('active');
+        }
+
+        function toggleErase() {
+            isErasing = !isErasing;
+            isDrawing = false;
+            const drawButton = document.getElementById('drawButton');
+            const eraseButton = document.getElementById('eraseButton');
+            eraseButton.classList.toggle('active', isErasing);
+            drawButton.classList.remove('active');
+        }
+
+        function resetPosition() {
+            resizeCanvas();
+        }
+
+        // Tab switching and collapsing
+        function toggleSection(section) {
+            const tabs = document.getElementById('tabs');
+            const toolbar = document.getElementById('toolbar');
+            const content = document.getElementById('content');
+
+            if (section === 'text') {
+                if (currentSection === 'text') {
+                    isTextCollapsed = !isTextCollapsed;
+                    if (isTextCollapsed) {
+                        toolbar.classList.add('hidden');
+                        content.classList.add('fullscreen');
+                    } else {
+                        toolbar.classList.remove('hidden');
+                        content.classList.remove('fullscreen');
+                    }
+                    showSection('text');
+                } else {
+                    isTextCollapsed = false;
+                    isDrawingCollapsed = false;
+                    toolbar.classList.remove('hidden');
+                    content.classList.remove('fullscreen');
+                    showSection('text');
+                }
+            } else if (section === 'drawing') {
+                if (currentSection === 'drawing') {
+                    isDrawingCollapsed = !isDrawingCollapsed;
+                    if (isDrawingCollapsed) {
+                        toolbar.classList.add('hidden');
+                        content.classList.add('fullscreen');
+                    } else {
+                        toolbar.classList.remove('hidden');
+                        content.classList.remove('fullscreen');
+                    }
+                    showSection('drawing');
+                } else {
+                    isDrawingCollapsed = false;
+                    isTextCollapsed = false;
+                    toolbar.classList.remove('hidden');
+                    content.classList.remove('fullscreen');
+                    showSection('drawing');
+                }
+            }
+        }
+
+        function showSection(section) {
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelector(`.tab[onclick="toggleSection('${section}')"]`).classList.add('active');
+            document.getElementById('textEditor').classList.add('hidden');
+            document.getElementById('drawingCanvas').classList.add('hidden');
+            document.getElementById('overlayCanvas').classList.add('hidden');
+            document.getElementById('savedTextList').classList.add('hidden');
+            document.getElementById('progressBarContainer').classList.add('hidden');
+            document.getElementById('textTools').classList.add('hidden');
+            document.getElementById('drawingTools').classList.remove('hidden');
+            
+            if (section === 'text') {
+                document.getElementById('textEditor').classList.remove('hidden');
+                document.getElementById('textTools').classList.remove('hidden');
+                document.getElementById('drawingTools').classList.add('hidden');
+                isDrawing = false;
+                isErasing = false;
+                document.getElementById('drawButton').classList.remove('active');
+                document.getElementById('eraseButton').classList.remove('active');
+            } else {
+                document.getElementById('drawingCanvas').classList.remove('hidden');
+                document.getElementById('overlayCanvas').classList.remove('hidden');
+                setTimeout(() => resizeCanvas(), 100);
+            }
+            currentSection = section;
+            redrawCanvas();
+        }
+
+        // Text Undo/Redo Functions
+        function saveTextState() {
+            textUndoStack.push(textEditor.value);
+            if (textUndoStack.length > 100) textUndoStack.shift();
+            textRedoStack = [];
+        }
+
+        function undoText() {
+            if (textUndoStack.length <= 1) return;
+            const currentText = textEditor.value;
+            textRedoStack.push(currentText);
+            if (textRedoStack.length > 100) textRedoStack.shift();
+            textUndoStack.pop();
+            textEditor.value = textUndoStack[textUndoStack.length - 1] || '';
+        }
+
+        function redoText() {
+            if (textRedoStack.length === 0) return;
+            const currentText = textEditor.value;
+            textUndoStack.push(currentText);
+            if (textUndoStack.length > 100) textUndoStack.shift();
+            textEditor.value = textRedoStack.pop();
+        }
+
+        // Text Editor Functions
+        function findAndReplace() {
+            saveTextState();
+            const find = prompt('Find what?');
+            if (!find) return;
+            const replace = prompt('Replace with?');
+            textEditor.value = textEditor.value.replace(new RegExp(find, 'g'), replace);
+            saveTextState();
+        }
+
+        function selectAll() {
+            textEditor.select();
+        }
+
+        function copyText() {
+            textEditor.select();
+            document.execCommand('copy');
+        }
+
+        function eraseText() {
+            saveTextState();
+            textEditor.value = '';
+            saveTextState();
+        }
+
+        function saveText() {
+            const text = textEditor.value;
+            const id = Date.now().toString();
+            savedTexts[id] = { text, date: new Date() };
+            localStorage.setItem('savedTexts', JSON.stringify(savedTexts));
+            alert('Text saved! ID: ' + id);
+        }
+
+        function showSavedTexts() {
+            document.getElementById('textEditor').classList.add('hidden');
+            document.getElementById('savedTextList').classList.remove('hidden');
+            renderTextList('view');
+        }
+
+        function renderTextList(mode) {
+            const list = document.getElementById('savedTextList');
+            list.innerHTML = '';
+            const texts = mode === 'permanentlyDelete' || mode === 'restore' ? deletedTexts : savedTexts;
+            const isEmpty = Object.keys(texts).length === 0;
+            
+            if (isEmpty) {
+                const div = document.createElement('div');
+                div.className = 'saved-text-item';
+                div.innerText = mode === 'permanentlyDelete' || mode === 'restore' ? 'No texts in trash!' : 'No saved texts!';
+                list.appendChild(div);
+            } else {
+                for (const id in texts) {
+                    const div = document.createElement('div');
+                    div.className = 'saved-text-item';
+                    div.innerText = `ID: ${id} | Date: ${new Date(texts[id].date).toLocaleString()} | ${texts[id].text.slice(0, 50)}...`;
+                    div.onclick = () => {
+                        if (mode === 'delete') {
+                            deletedTexts[id] = savedTexts[id];
+                            delete savedTexts[id];
+                            localStorage.setItem('savedTexts', JSON.stringify(savedTexts));
+                            localStorage.setItem('deletedTexts', JSON.stringify(deletedTexts));
+                            alert('Text moved to trash!');
+                            renderTextList('delete');
+                        } else if (mode === 'restore') {
+                            const now = new Date();
+                            const deletedDate = new Date(deletedTexts[id].date);
+                            const daysDiff = (now - deletedDate) / (1000 * 60 * 60 * 24);
+                            if (daysDiff <= 60) {
+                                saveTextState();
+                                savedTexts[id] = deletedTexts[id];
+                                delete deletedTexts[id];
+                                localStorage.setItem('savedTexts', JSON.stringify(savedTexts));
+                                localStorage.setItem('deletedTexts', JSON.stringify(deletedTexts));
+                                textEditor.value = savedTexts[id].text;
+                                saveTextState();
+                                alert('Text restored!');
+                                showSection('text');
+                            } else {
+                                alert('Text is older than 60 days!');
+                            }
+                        } else if (mode === 'permanentlyDelete') {
+                            delete deletedTexts[id];
+                            localStorage.setItem('deletedTexts', JSON.stringify(deletedTexts));
+                            alert('Text permanently deleted!');
+                            renderTextList('permanentlyDelete');
+                        } else {
+                            saveTextState();
+                            textEditor.value = savedTexts[id].text;
+                            saveTextState();
+                            showSection('text');
+                        }
+                    };
+                    list.appendChild(div);
+                }
+            }
+            
+            const backButton = document.createElement('button');
+            backButton.className = 'back-button';
+            backButton.innerText = 'Back';
+            backButton.onclick = () => showSection('text');
+            list.insertBefore(backButton, list.firstChild);
+
+            if (mode === 'restore') {
+                const viewTrashButton = document.createElement('button');
+                viewTrashButton.className = 'view-trash-button';
+                viewTrashButton.innerText = 'View Trash';
+                viewTrashButton.onclick = () => renderTextList('permanentlyDelete');
+                list.insertBefore(viewTrashButton, list.firstChild);
+            }
+        }
+
+        function deleteSavedText() {
+            document.getElementById('textEditor').classList.add('hidden');
+            document.getElementById('savedTextList').classList.remove('hidden');
+            renderTextList('delete');
+        }
+
+        function restoreText() {
+            document.getElementById('textEditor').classList.add('hidden');
+            document.getElementById('savedTextList').classList.remove('hidden');
+            renderTextList('restore');
+        }
+
+        function permanentlyDelete() {
+            document.getElementById('textEditor').classList.add('hidden');
+            document.getElementById('savedTextList').classList.remove('hidden');
+            renderTextList('permanentlyDelete');
+        }
+
+        function exportText() {
+            const text = textEditor.value;
+            const blob = new Blob([text], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'notepad.txt';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // File Handling
+        async function openFile() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'application/pdf,.txt';
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                saveTextState();
+                const progressBarContainer = document.getElementById('progressBarContainer');
+                const progressFill = document.getElementById('progressFill');
+                const progressText = document.getElementById('progressText');
+                progressBarContainer.classList.remove('hidden');
+                progressFill.style.width = '0%';
+                progressText.textContent = 'Loading file...';
+
+                if (file.type === 'text/plain') {
+                    progressText.textContent = 'Loading text file...';
+                    const text = await file.text();
+                    textEditor.value = text;
+                    saveTextState();
+                    progressBarContainer.classList.add('hidden');
+                    showSection('text');
+                } else if (file.type === 'application/pdf') {
+                    try {
+                        currentPdf = null;
+                        pdfPageCount = 0;
+                        canvasPages = [document.createElement('canvas')];
+                        currentPageIndex = 0;
+                        undoStack = [];
+                        redoStack = [];
+                        overlayContext.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+                        const arrayBuffer = await file.arrayBuffer();
+                        const loadingTask = pdfjsLib.getDocument({
+                            data: arrayBuffer,
+                            disableAutoFetch: true,
+                            disableStream: true,
+                            disableFontFace: true,
+                            nativeImageDecoderSupport: 'decode',
+                            maxImageSize: 1024 * 1024,
+                            isEvalSupported: false
+                        });
+
+                        let totalSteps = 2;
+                        let currentStep = 0;
+
+                        function updateProgress(step, total) {
+                            currentStep = step;
+                            const percent = Math.min(100, (currentStep / total) * 100);
+                            progressFill.style.width = `${percent}%`;
+                            progressText.textContent = `Processing PDF (${currentStep}/${total})...`;
+                        }
+
+                        updateProgress(0, totalSteps);
+                        loadingTask.onProgress = (progress) => {
+                            if (progress.total) {
+                                const percent = Math.min(100, (progress.loaded / progress.total) * 50);
+                                progressFill.style.width = `${percent}%`;
+                            }
+                        };
+
+                        currentPdf = await loadingTask.promise;
+                        pdfPageCount = currentPdf.numPages;
+                        updateProgress(1, totalSteps);
+
+                        let textContent = '';
+                        for (let i = 1; i <= pdfPageCount; i++) {
+                            const page = await currentPdf.getPage(i);
+                            const text = await page.getTextContent();
+                            textContent += text.items.map(item => item.str + (item.hasEOL ? '\n' : ' ')).join('');
+                            if (i < pdfPageCount) textContent += '\n\n';
+                        }
+                        textContent = textContent.trim();
+
+                        if (textContent.length > 0) {
+                            textEditor.value = textContent;
+                            saveTextState();
+                            updateProgress(2, totalSteps);
+                            progressBarContainer.classList.add('hidden');
+                            showSection('text');
+                            currentPdf = null;
+                        } else {
+                            totalSteps = pdfPageCount + 2;
+                            updateProgress(2, totalSteps);
+
+                            const selector = document.getElementById('pageSelector');
+                            selector.innerHTML = '';
+                            for (let i = 1; i <= pdfPageCount; i++) {
+                                const option = document.createElement('option');
+                                option.value = i;
+                                option.text = `Page ${i}`;
+                                selector.appendChild(option);
+                            }
+                            canvasPages = Array(pdfPageCount).fill().map(() => document.createElement('canvas'));
+                            progressBarContainer.classList.add('hidden');
+                            showSection('drawing');
+                            renderPage(1);
+                        }
+                    } catch (err) {
+                        console.error('PDF loading failed:', err);
+                        progressBarContainer.classList.add('hidden');
+                        let errorMessage = 'Failed to load PDF!';
+                        if (err.name === 'InvalidPDFException') {
+                            errorMessage = 'Invalid or corrupted PDF file!';
+                        } else if (err.message.includes('network')) {
+                            errorMessage = 'Network error: Please check your connection or try again!';
+                        }
+                        alert(errorMessage);
+                        currentPdf = null;
+                    }
+                }
+            };
+            input.click();
+        }
+
+        function previousPage() {
+            if (currentPageIndex > 0) {
+                // Save current canvas to localStorage
+                localStorage.setItem(`canvasPage_${currentPageIndex}`, overlayCanvas.toDataURL());
+                currentPageIndex--;
+                document.getElementById('pageSelector').value = currentPageIndex + 1;
+                renderPage(currentPageIndex + 1);
+            }
+        }
+
+        function nextPage() {
+            if (currentPageIndex < canvasPages.length - 1) {
+                // Save current canvas to localStorage
+                localStorage.setItem(`canvasPage_${currentPageIndex}`, overlayCanvas.toDataURL());
+                currentPageIndex++;
+                document.getElementById('pageSelector').value = currentPageIndex + 1;
+                renderPage(currentPageIndex + 1);
+            }
+        }
+
+        async function renderPage(pageNum) {
+            currentPageIndex = pageNum - 1;
+            const content = document.querySelector('.content');
+            let imgWidth = content.offsetWidth;
+            let imgHeight = content.offsetHeight;
+
+            if (currentPdf && currentPageIndex < pdfPageCount) {
+                const page = await currentPdf.getPage(pageNum);
+                const viewport = page.getViewport({ scale: 3 });
+                imgWidth = viewport.width;
+                imgHeight = viewport.height;
+                canvasPages[currentPageIndex].width = imgWidth;
+                canvasPages[currentPageIndex].height = imgHeight;
+                const ctx = canvasPages[currentPageIndex].getContext('2d', { willReadFrequently: true });
+                ctx.clearRect(0, 0, imgWidth, imgHeight);
+                await page.render({
+                    canvasContext: ctx,
+                    viewport: viewport,
+                    enableWebGL: true
+                }).promise;
+            } else {
+                canvasPages[currentPageIndex].width = imgWidth;
+                canvasPages[currentPageIndex].height = imgHeight;
+                const ctx = canvasPages[currentPageIndex].getContext('2d', { willReadFrequently: true });
+                ctx.clearRect(0, 0, imgWidth, imgHeight);
+            }
+
+            canvas.width = imgWidth;
+            canvas.height = imgHeight;
+            overlayCanvas.width = content.offsetWidth;
+            overlayCanvas.height = content.offsetHeight;
+            canvasPages[currentPageIndex].width = canvas.width;
+            canvasPages[currentPageIndex].height = canvas.height;
+
+            // Load canvas from localStorage if available
+            const savedCanvas = localStorage.getItem(`canvasPage_${currentPageIndex}`);
+            if (savedCanvas) {
+                const img = new Image();
+                img.src = savedCanvas;
+                img.onload = () => {
+                    overlayContext.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                    overlayContext.drawImage(img, 0, 0);
+                    redrawCanvas();
+                };
+            } else {
+                overlayContext.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                redrawCanvas();
+            }
+        }
+
+        // Save as JPG (Merges background and overlay)
+        async function saveAsJPG() {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+            const ctx = tempCanvas.getContext('2d');
+
+            // Draw background (PDF or blank canvas)
+            if (currentPdf && currentPageIndex < pdfPageCount) {
+                const page = await currentPdf.getPage(currentPageIndex + 1);
+                const viewport = page.getViewport({ scale: 3 });
+                tempCanvas.width = viewport.width;
+                tempCanvas.height = viewport.height;
+                await page.render({
+                    canvasContext: ctx,
+                    viewport: viewport,
+                    enableWebGL: true
+                }).promise;
+            } else {
+                // Draw blank white background
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+            }
+
+            // Draw overlay canvas on top
+            ctx.drawImage(overlayCanvas, 0, 0, tempCanvas.width, tempCanvas.height);
+
+            // Export as JPG
+            const dataURL = tempCanvas.toDataURL('image/jpeg', 0.95);
+            const a = document.createElement('a');
+            a.href = dataURL;
+            a.download = `drawing_page_${currentPageIndex + 1}.jpg`;
+            a.click();
+        }
+
+        // Share as PDF (Combines all pages with drawings)
+        async function shareAsPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({
+                orientation: 'portrait',
+                unit: 'px',
+                format: 'a4'
+            });
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const pageHeight = doc.internal.pageSize.getHeight();
+
+            const progressBarContainer = document.getElementById('progressBarContainer');
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+            progressBarContainer.classList.remove('hidden');
+            progressFill.style.width = '0%';
+            progressText.textContent = 'Generating PDF...';
+
+            for (let i = 0; i < canvasPages.length; i++) {
+                if (i > 0) doc.addPage();
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = canvasPages[i].width;
+                tempCanvas.height = canvasPages[i].height;
+                const ctx = tempCanvas.getContext('2d');
+
+                // Draw background (PDF or blank)
+                if (currentPdf && i < pdfPageCount) {
+                    const page = await currentPdf.getPage(i + 1);
+                    const viewport = page.getViewport({ scale: 3 });
+                    tempCanvas.width = viewport.width;
+                    tempCanvas.height = viewport.height;
+                    await page.render({
+                        canvasContext: ctx,
+                        viewport: viewport,
+                        enableWebGL: true
+                    }).promise;
+                } else {
+                    // Draw blank white background
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                }
+
+                // Draw overlay from localStorage
+                const savedCanvas = localStorage.getItem(`canvasPage_${i}`);
+                if (savedCanvas) {
+                    const img = new Image();
+                    img.src = savedCanvas;
+                    await new Promise(resolve => {
+                        img.onload = () => {
+                            ctx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
+                            resolve();
+                        };
+                        img.onerror = () => resolve();
+                    });
+                }
+
+                // Scale image to fit A4 page
+                const imgData = tempCanvas.toDataURL('image/jpeg', 0.95);
+                const imgProps = doc.getImageProperties(imgData);
+                const imgWidth = pageWidth - 20; // 10px margin on each side
+                const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+                const yPos = (pageHeight - imgHeight) / 2; // Center vertically
+                doc.addImage(imgData, 'JPEG', 10, yPos, imgWidth, imgHeight);
+
+                // Update progress
+                const percent = ((i + 1) / canvasPages.length) * 100;
+                progressFill.style.width = `${percent}%`;
+                progressText.textContent = `Generating PDF (${i + 1}/${canvasPages.length})...`;
+            }
+
+            progressBarContainer.classList.add('hidden');
+            doc.save('notepad_drawing.pdf');
+        }
+
+        // Canvas Drawing
+        function resizeCanvas() {
+            const content = document.querySelector('.content');
+            let imgWidth = content.offsetWidth;
+            let imgHeight = content.offsetHeight;
+
+            if (currentPdf && currentPageIndex < pdfPageCount) {
+                imgWidth = canvasPages[currentPageIndex].width || imgWidth;
+                imgHeight = canvasPages[currentPageIndex].height || imgHeight;
+            }
+
+            canvas.width = imgWidth;
+            canvas.height = imgHeight;
+            overlayCanvas.width = content.offsetWidth;
+            overlayCanvas.height = content.offsetHeight;
+            canvasPages[currentPageIndex].width = canvas.width;
+            canvasPages[currentPageIndex].height = canvas.height;
+            canvasPages[currentPageIndex].getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+            // Load canvas from localStorage
+            const savedCanvas = localStorage.getItem(`canvasPage_${currentPageIndex}`);
+            if (savedCanvas) {
+                const img = new Image();
+                img.src = savedCanvas;
+                img.onload = () => {
+                    overlayContext.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                    overlayContext.drawImage(img, 0, 0);
+                    redrawCanvas();
+                };
+            } else {
+                redrawCanvas();
+            }
+        }
+
+        function addCanvasPage() {
+            const content = document.querySelector('.content');
+            // Save current canvas to localStorage
+            const dataURL = overlayCanvas.toDataURL();
+            localStorage.setItem(`canvasPage_${currentPageIndex}`, dataURL);
+            
+            const newCanvas = document.createElement('canvas');
+            newCanvas.width = content.offsetWidth;
+            newCanvas.height = content.offsetHeight;
+            canvasPages.push(newCanvas);
+            currentPageIndex = canvasPages.length - 1;
+            currentPdf = null;
+            pdfPageCount = 0;
+            const selector = document.getElementById('pageSelector');
+            selector.innerHTML = '';
+            for (let i = 1; i <= canvasPages.length; i++) {
+                const option = document.createElement('option');
+                option.value = i;
+                option.text = `Page ${i}`;
+                selector.appendChild(option);
+            }
+            selector.value = canvasPages.length;
+            undoStack = [];
+            redoStack = [];
+            overlayContext.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+            localStorage.setItem(`canvasPage_${currentPageIndex}`, overlayCanvas.toDataURL());
+            redrawCanvas();
+        }
+
+        function newCanvasPage() {
+            addCanvasPage();
+            resizeCanvas();
+        }
+
+        function clearCurrentPage() {
+            saveCanvasState();
+            overlayCanvas.style.opacity = '0';
+            setTimeout(() => {
+                if (currentPageIndex === 0) {
+                    // For page 1, only clear the drawing without deleting the page
+                    overlayContext.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                    localStorage.setItem(`canvasPage_${currentPageIndex}`, overlayCanvas.toDataURL());
+                    redoStack = [];
+                } else {
+                    // For other pages, delete the page
+                    canvasPages.splice(currentPageIndex, 1);
+                    localStorage.removeItem(`canvasPage_${currentPageIndex}`);
+                    currentPageIndex = Math.max(0, currentPageIndex - 1);
+                    const selector = document.getElementById('pageSelector');
+                    selector.innerHTML = '';
+                    for (let i = 1; i <= canvasPages.length; i++) {
+                        const option = document.createElement('option');
+                        option.value = i;
+                        option.text = `Page ${i}`;
+                        selector.appendChild(option);
+                    }
+                    selector.value = currentPageIndex + 1;
+                    // Load the new current page from localStorage
+                    const savedCanvas = localStorage.getItem(`canvasPage_${currentPageIndex}`);
+                    if (savedCanvas) {
+                        const img = new Image();
+                        img.src = savedCanvas;
+                        img.onload = () => {
+                            overlayContext.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                            overlayContext.drawImage(img, 0, 0);
+                            redrawCanvas();
+                        };
+                    } else {
+                        overlayContext.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                        redrawCanvas();
+                    }
+                    redoStack = [];
+                }
+                overlayCanvas.style.opacity = '1';
+            }, 500);
+        }
+
+        function fillCanvas() {
+            saveCanvasState();
+            overlayContext.fillStyle = penColor;
+            overlayContext.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+            redoStack = [];
+            localStorage.setItem(`canvasPage_${currentPageIndex}`, overlayCanvas.toDataURL());
+            redrawCanvas();
+        }
+
+        function setPenWidth(width) {
+            penWidth = parseInt(width);
+        }
+
+        function setPenColor(color) {
+            penColor = color;
+        }
+
+        function saveCanvasState(points = []) {
+            const dataURL = overlayCanvas.toDataURL();
+            const bounds = points.length > 0 ? calculateStrokeBounds(points) : null;
+            undoStack.push({ dataURL, points, bounds });
+            if (undoStack.length > 100) undoStack.shift();
+            localStorage.setItem(`canvasPage_${currentPageIndex}`, dataURL);
+        }
+
+        function calculateStrokeBounds(points) {
+            if (points.length === 0) return null;
+            let minX = points[0].x, maxX = points[0].x;
+            let minY = points[0].y, maxY = points[0].y;
+            points.forEach(point => {
+                minX = Math.min(minX, point.x);
+                maxX = Math.max(maxX, point.x);
+                minY = Math.min(minY, point.y);
+                maxY = Math.max(maxY, point.y);
+            });
+            return { minX, maxX, minY, maxY };
+        }
+
+        function undo() {
+            if (undoStack.length === 0) return;
+            const currentState = overlayCanvas.toDataURL();
+            redoStack.push({ dataURL: currentState, points: [], bounds: null });
+            if (redoStack.length > 100) redoStack.shift();
+            const prevState = undoStack.pop();
+            const img = new Image();
+            img.src = prevState.dataURL;
+            img.onload = () => {
+                overlayContext.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                overlayContext.drawImage(img, 0, 0);
+                localStorage.setItem(`canvasPage_${currentPageIndex}`, overlayCanvas.toDataURL());
+                redrawCanvas();
+                // Switch to pen drawing mode
+                isDrawing = true;
+                isErasing = false;
+                document.getElementById('drawButton').classList.add('active');
+                document.getElementById('eraseButton').classList.remove('active');
+            };
+        }
+
+        function redo() {
+            if (redoStack.length === 0) return;
+            const currentState = overlayCanvas.toDataURL();
+            undoStack.push({ dataURL: currentState, points: [], bounds: null });
+            if (undoStack.length > 100) undoStack.shift();
+            const nextState = redoStack.pop();
+            const img = new Image();
+            img.src = nextState.dataURL;
+            img.onload = () => {
+                overlayContext.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                overlayContext.drawImage(img, 0, 0);
+                localStorage.setItem(`canvasPage_${currentPageIndex}`, overlayCanvas.toDataURL());
+                redrawCanvas();
+            };
+        }
+
+        async function redrawCanvas() {
+            if (canvas.width === 0 || canvas.height === 0) return;
+            canvasContext.clearRect(0, 0, canvas.width, canvas.height);
+            if (currentPdf && currentPageIndex < pdfPageCount) {
+                const page = await currentPdf.getPage(currentPageIndex + 1);
+                const viewport = page.getViewport({ scale: 3 });
+                await page.render({
+                    canvasContext: canvasContext,
+                    viewport: viewport,
+                    enableWebGL: true
+                }).promise;
+            }
+        }
+
+        // Smooth Drawing with Ball Pen Style
+        function getCoordinates(e) {
+            const rect = overlayCanvas.getBoundingClientRect();
+            let x, y;
+            if (e.type.startsWith('touch')) {
+                x = e.touches[0].clientX - rect.left;
+                y = e.touches[0].clientY - rect.top;
+            } else {
+                x = e.clientX - rect.left;
+                y = e.clientY - rect.top;
+            }
+            return { x, y, time: Date.now() };
+        }
+
+        function drawStroke() {
+            if (strokePoints.length < 1) return;
+            overlayContext.lineCap = 'round';
+            overlayContext.lineJoin = 'round';
+            overlayContext.strokeStyle = penColor;
+            overlayContext.lineWidth = penWidth;
+            overlayContext.globalAlpha = 0.85; // Slightly translucent for ball pen effect
+
+            overlayContext.beginPath();
+            overlayContext.moveTo(strokePoints[0].x, strokePoints[0].y);
+            for (let i = 1; i < strokePoints.length; i++) {
+                const midX = (strokePoints[i - 1].x + strokePoints[i].x) / 2;
+                const midY = (strokePoints[i - 1].y + strokePoints[i].y) / 2;
+                overlayContext.quadraticCurveTo(
+                    strokePoints[i - 1].x,
+                    strokePoints[i - 1].y,
+                    midX,
+                    midY
+                );
+            }
+            overlayContext.stroke();
+            overlayContext.globalAlpha = 1.0; // Reset alpha
+        }
+
+        function eraseStroke(x, y) {
+            const eraseRadius = penWidth * 15;
+            overlayContext.globalCompositeOperation = 'destination-out';
+            overlayContext.beginPath();
+            overlayContext.arc(x, y, eraseRadius, 0, Math.PI * 2);
+            overlayContext.fill();
+            overlayContext.globalCompositeOperation = 'source-over';
+        }
+
+        function addPoint(e) {
+            if (!isDrawing && !isErasing || currentSection !== 'drawing') return;
+            const point = getCoordinates(e);
+            if (isDrawing) {
+                point.color = penColor;
+                point.width = penWidth;
+                strokePoints.push(point);
+                drawStroke();
+            } else if (isErasing) {
+                strokePoints.push(point);
+                eraseStroke(point.x, point.y);
+            }
+            e.preventDefault();
+        }
+
+        // Line intersection helper function
+        function lineIntersects(a1, a2, b1, b2) {
+            const det = (a2.x - a1.x) * (b2.y - b1.y) - (a2.y - a1.y) * (b2.x - b1.x);
+            if (det === 0) return false;
+
+            const s = ((b1.x - a1.x) * (b2.y - b1.y) - (b1.y - a1.y) * (b2.x - b1.x)) / det;
+            const t = ((b1.x - a1.x) * (a2.y - a1.y) - (b1.y - a1.y) * (a2.x - a1.x)) / det;
+
+            return s >= 0 && s <= 1 && t >= 0 && t <= 1;
+        }
+
+        function strokeIntersectsSwipe(strokePoints, swipePath) {
+            for (let i = 0; i < strokePoints.length - 1; i++) {
+                for (let j = 0; j < swipePath.length - 1; j++) {
+                    if (lineIntersects(strokePoints[i], strokePoints[i + 1], swipePath[j], swipePath[j + 1])) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function eraseStrokes(swipePath) {
+            if (undoStack.length === 0) return;
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = overlayCanvas.width;
+            tempCanvas.height = overlayCanvas.height;
+            const tempContext = tempCanvas.getContext('2d');
+            tempContext.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+
+            // Redraw strokes that don't intersect with swipe path
+            const survivingStrokes = [];
+            undoStack.forEach(stroke => {
+                if (stroke.points.length > 0 && !strokeIntersectsSwipe(stroke.points, swipePath)) {
+                    survivingStrokes.push(stroke);
+                    const img = new Image();
+                    img.src = stroke.dataURL;
+                    img.onload = () => {
+                        tempContext.drawImage(img, 0, 0);
+                    };
+                }
+            });
+
+            // Animate fade out
+            overlayCanvas.style.opacity = '0';
+            setTimeout(() => {
+                overlayContext.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                overlayContext.drawImage(tempCanvas, 0, 0);
+                overlayCanvas.style.opacity = '1';
+                undoStack = survivingStrokes;
+                redoStack = [];
+                localStorage.setItem(`canvasPage_${currentPageIndex}`, overlayCanvas.toDataURL());
+                redrawCanvas();
+            }, 500);
+        }
+
+        // Drawing and Swipe Event Listeners
+        overlayCanvas.addEventListener('mousedown', (e) => {
+            if (currentSection === 'drawing' && isDrawing) {
+                strokePoints = [getCoordinates(e)];
+                drawStroke();
+            } else if (currentSection === 'drawing' && isErasing) {
+                strokePoints = [getCoordinates(e)];
+                eraseStroke(strokePoints[0].x, strokePoints[0].y);
+            }
+        });
+
+        overlayCanvas.addEventListener('mousemove', (e) => {
+            if (currentSection === 'drawing' && isDrawing) {
+                addPoint(e);
+            } else if (currentSection === 'drawing' && isErasing) {
+                const point = getCoordinates(e);
+                strokePoints.push(point);
+                eraseStroke(point.x, point.y);
+            }
+        });
+
+        overlayCanvas.addEventListener('mouseup', () => {
+            if (currentSection === 'drawing' && (isDrawing || isErasing) && strokePoints.length > 0) {
+                saveCanvasState(strokePoints);
+                redoStack = [];
+                strokePoints = [];
+            }
+        });
+
+        overlayCanvas.addEventListener('touchstart', (e) => {
+            if (currentSection === 'drawing') {
+                if (e.touches.length === 1) {
+                    // One finger: switch to pen mode
+                    isDrawing = true;
+                    isErasing = false;
+                    document.getElementById('drawButton').classList.add('active');
+                    document.getElementById('eraseButton').classList.remove('active');
+                    swipeStartX = e.touches[0].clientX;
+                    swipeStartTime = Date.now();
+                    swipePath = [getCoordinates(e)];
+                    strokePoints = [getCoordinates(e)];
+                    drawStroke();
+                } else if (e.touches.length === 2) {
+                    // Two fingers: switch to eraser mode
+                    isErasing = true;
+                    isDrawing = false;
+                    document.getElementById('eraseButton').classList.add('active');
+                    document.getElementById('drawButton').classList.remove('active');
+                    swipeStartX = e.touches[0].clientX;
+                    swipeStartTime = Date.now();
+                    swipePath = [getCoordinates(e)];
+                    strokePoints = [getCoordinates(e)];
+                    eraseStroke(strokePoints[0].x, strokePoints[0].y);
+                }
+                e.preventDefault();
+            }
+        });
+
+        overlayCanvas.addEventListener('touchmove', (e) => {
+            if (currentSection === 'drawing' && (e.touches.length === 1 || e.touches.length === 2)) {
+                swipePath.push(getCoordinates(e));
+                if (isDrawing) {
+                    addPoint(e);
+                } else if (isErasing) {
+                    const point = getCoordinates(e);
+                    strokePoints.push(point);
+                    eraseStroke(point.x, point.y);
+                }
+                e.preventDefault();
+            }
+        });
+
+        overlayCanvas.addEventListener('touchend', (e) => {
+            if (currentSection === 'drawing' && e.changedTouches.length >= 1) {
+                const swipeEndX = e.changedTouches[0].clientX;
+                const swipeEndTime = Date.now();
+                const swipeDistance = swipeEndX - swipeStartX;
+                const swipeDuration = swipeEndTime - swipeStartTime;
+                const swipeSpeed = Math.abs(swipeDistance) / swipeDuration; // pixels per millisecond
+
+                // Detect fast right-to-left swipe (negative distance, speed > 0.1 px/ms)
+                if (swipeDistance < -100 && swipeDuration < 500 && swipeSpeed > 0.1) {
+                    undo();
+                }
+                else if ((isDrawing || isErasing) && strokePoints.length > 0) {
+                    saveCanvasState(strokePoints);
+                    redoStack = [];
+                    strokePoints = [];
+                }
+                swipePath = [];
+                e.preventDefault();
+            }
+        });
+
+        overlayCanvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+        });
+
+        // Initialize storage
+        savedTexts = JSON.parse(localStorage.getItem('savedTexts') || '{}');
+        deletedTexts = JSON.parse(localStorage.getItem('deletedTexts') || '{}');
+
+        // Text input event listener for undo/redo
+        textEditor.addEventListener('keyup', () => {
+            clearTimeout(textChangeTimeout);
+            textChangeTimeout = setTimeout(() => {
+                if (textEditor.value !== textUndoStack[textUndoStack.length - 1]) {
+                    saveTextState();
+                }
+            }, 500);
+        });
+
+        // Window resize handling
+        window.addEventListener('resize', resizeCanvas);
+    </script>
+</body>
+</html>
