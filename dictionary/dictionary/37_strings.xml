@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Abhayattcc Dictionary Reader</string>
+    <string name="search_hint">Search word...</string>
+    <string name="upload_file">Upload File</string>
+    <string name="odia_ocr">Odia OCR</string>
+    <string name="export_text">Export Text</string>
+    <string name="close_reader">Close Reader</string>
+    <string name="close">Close</string>
+    <string name="settings">Settings</string>
+    <string name="share">Share</string>
+    <string name="premium">Premium</string>
+    <string name="privacy_policy">Privacy Policy</string>
+</resources>

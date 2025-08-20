@@ -1,0 +1,74 @@
+AbhayattccDictionaryReader/
+├── app/
+│   ├── src/
+│   │   ├── main/
+│   │   │   ├── java/com/abhayattcc/dictionaryreader/
+│   │   │   │   ├── activities/
+│   │   │   │   │   ├── 01_MainActivity.kt
+│   │   │   │   │   ├── 02_PrivacyPolicyActivity.kt
+│   │   │   │   │   ├── 03_SplashActivity.kt
+│   │   │   │   ├── adapters/
+│   │   │   │   │   ├── 04_SuggestionsAdapter.kt
+│   │   │   │   ├── billing/
+│   │   │   │   │   ├── 05_BillingManager.kt
+│   │   │   │   ├── database/
+│   │   │   │   │   ├── 06_DictionaryDatabase.kt
+│   │   │   │   │   ├── 07_DictionaryDao.kt
+│   │   │   │   ├── fragments/
+│   │   │   │   │   ├── 08_DictionaryFragment.kt
+│   │   │   │   │   ├── 09_ReaderFragment.kt
+│   │   │   │   ├── models/
+│   │   │   │   │   ├── 10_DictionaryEntry.kt
+│   │   │   │   ├── services/
+│   │   │   │   │   ├── 11_BootReceiver.kt
+│   │   │   │   │   ├── 12_ClipboardService.kt
+│   │   │   │   ├── utils/
+│   │   │   │   │   ├── 13_FileUtils.kt
+│   │   │   │   │   ├── 14_OcrUtils.kt
+│   │   │   │   │   ├── 15_TtsUtils.kt
+│   │   │   │   ├── viewmodels/
+│   │   │   │   │   ├── 16_DictionaryViewModel.kt
+│   │   │   │   │   ├── 17_DictionaryViewModelFactory.kt
+│   │   │   │   ├── 18_App.kt
+│   │   │   ├── res/
+│   │   │   │   ├── anim/
+│   │   │   │   │   ├── 19_bounce_animation.xml
+│   │   │   │   │   ├── 20_glow_animation.xml
+│   │   │   │   │   ├── 21_wiggle_animation.xml
+│   │   │   │   ├── drawable/
+│   │   │   │   │   ├── 22_edit_text_background.xml
+│   │   │   │   │   ├── 23_gradient_background.xml
+│   │   │   │   │   ├── 24_ic_premium.xml
+│   │   │   │   │   ├── 25_ic_privacy.xml
+│   │   │   │   │   ├── 26_ic_settings.xml
+│   │   │   │   │   ├── 27_ic_share.xml
+│   │   │   │   │   ├── ic_app_icon.png (placeholder, provide your own)
+│   │   │   │   │   ├── ic_splash_background.png (placeholder, provide your own)
+│   │   │   │   ├── layout/
+│   │   │   │   │   ├── 28_activity_main.xml
+│   │   │   │   │   ├── 29_activity_privacy_policy.xml
+│   │   │   │   │   ├── 30_activity_splash.xml
+│   │   │   │   │   ├── 31_fragment_dictionary.xml
+│   │   │   │   │   ├── 32_fragment_reader.xml
+│   │   │   │   │   ├── 33_popup_dictionary.xml
+│   │   │   │   │   ├── 34_item_suggestion.xml
+│   │   │   │   ├── menu/
+│   │   │   │   │   ├── 35_nav_menu.xml
+│   │   │   │   ├── values/
+│   │   │   │   │   ├── 36_colors.xml
+│   │   │   │   │   ├── 37_strings.xml
+│   │   │   │   │   ├── 38_themes.xml
+                            navigation/
+                                    38.1_nav_graph.xml
+│   │   │   ├── assets/
+│   │   │   │   ├── databases/
+│   │   │   │   │  
+│   │   │   │   ├── 39_privacy_policy.html
+│   │   │   ├── 40_AndroidManifest.xml
+│   │   ├── 41_proguard-rules.pro
+│   ├── 42_build.gradle.kts
+├── 43_build.gradle.kts
+├── 44_gradle.properties
+├── 45_settings.gradle.kts
+├── 46_database_schema.sql (for reference, not included in build)
+├── 47_setup.sh
