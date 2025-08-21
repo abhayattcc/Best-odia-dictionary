@@ -1798,21 +1798,20 @@ async function initializeApp() {
         }
     }
 
-    const isCached = localStorage.getItem('cachePopulated') === 'true' && await isCachePopulated();
-    
-    if (!isCached) {
+    // Skip cache if already populated
+    if (localStorage.getItem('cachePopulated') !== 'true') {
         showProgress('Initializing app', 0);
         await cacheFiles();
+        showProgress('Initializing app', 50);
+    }
+
+    try {
         await initDatabases();
-        showProgress('Initializing app', 100);
+    } catch (error) {
+        console.error('Error initializing databases:', error);
+        document.getElementById('results').innerHTML = 'Error loading dictionaries. Please ensure all files are available locally.';
+    } finally {
         hideProgress();
-    } else {
-        try {
-            await initDatabases();
-        } catch (error) {
-            console.error('Error initializing databases offline:', error);
-            document.getElementById('results').innerHTML = 'Error loading dictionaries offline. Please ensure all files are available locally.';
-        }
     }
 
     if (isSpeechSupported) {
