@@ -1184,7 +1184,7 @@
     }
 
     function loadTextFile(files) {
-        let fullText = '';
+        textPages = [];
         const totalFiles = files.length;
         let processedFiles = 0;
 
@@ -1197,12 +1197,11 @@
                     div.innerHTML = content;
                     content = div.textContent;
                 }
-                fullText += content + '\n\n';
+                textPages.push(content);
                 processedFiles++;
                 showProgress('Processing text file', Math.round((processedFiles / totalFiles) * 100));
 
                 if (processedFiles === totalFiles) {
-                    textPages = [fullText];
                     currentPageIndex = 0;
                     renderTextPage();
                     document.getElementById('dictionary-section').classList.add('hidden');
@@ -1328,12 +1327,11 @@
                                             tessedit_create_osd: 0
                                         });
                                         pageText = data.words
-    .filter(word => word.confidence > 85)
-    .map(word => word.text)
-    .join(' ')
-    .replace(/[ \t]+/g, ' ') // Replace multiple spaces or tabs with a single space
-    .replace(/\n+/g, '\n')   // Preserve single newlines for paragraphs
-    .trim();
+                                            .filter(word => word.confidence > 85)
+                                            .map(word => word.text)
+                                            .join(' ')
+                                            .replace(/\s+/g, ' ')
+                                            .trim();
                                         ocrFileCache.set(pageKey, pageText);
                                     }
                                     textPages.push(pageText);
@@ -1384,13 +1382,12 @@
                                         tessedit_create_unlv: 0,
                                         tessedit_create_osd: 0
                                     });
-imageText = data.words
-    .filter(word => word.confidence > 85)
-    .map(word => word.text)
-    .join(' ')
-    .replace(/[ \t]+/g, ' ') // Replace multiple spaces or tabs with a single space
-    .replace(/\n+/g, '\n')   // Preserve single newlines for paragraphs
-    .trim();
+                                    imageText = data.words
+                                        .filter(word => word.confidence > 85)
+                                        .map(word => word.text)
+                                        .join(' ')
+                                        .replace(/\s+/g, ' ')
+                                        .trim();
                                     ocrFileCache.set(fileKey, imageText);
                                 }
                                 textPages.push(imageText);
@@ -1442,51 +1439,83 @@ imageText = data.words
     function updatePagination() {
         const paginationDiv = document.getElementById('pagination');
         paginationDiv.innerHTML = '';
+        if (textPages.length > 1) {
+            const prevButton = document.createElement('button');
+            prevButton.id = 'prev-page';
+            prevButton.textContent = '⬅️ Prev';
+            prevButton.disabled = currentPageIndex === 0;
+            prevButton.onclick = () => changePage(-1);
+
+            const pageInfo = document.createElement('span');
+            pageInfo.id = 'page-info';
+            pageInfo.textContent = `Page ${currentPageIndex + 1} of ${textPages.length}`;
+
+            const nextButton = document.createElement('button');
+            nextButton.id = 'next-page';
+            nextButton.textContent = 'Next ➡️';
+            nextButton.disabled = currentPageIndex === textPages.length - 1;
+            nextButton.onclick = () => changePage(1);
+
+            paginationDiv.appendChild(prevButton);
+            paginationDiv.appendChild(pageInfo);
+            paginationDiv.appendChild(nextButton);
+        }
     }
 
-    function changePage(index) {
-        // No-op since pagination is removed
+    function changePage(direction) {
+        const newIndex = currentPageIndex + direction;
+        if (newIndex >= 0 && newIndex < textPages.length) {
+            stopSpeech();
+            currentPageIndex = newIndex;
+            renderTextPage();
+        }
     }
 
-    function loadPDF(files) {
-        let fullText = '';
+    async function loadPDF(files) {
+        textPages = [];
         const totalFiles = files.length;
         let processedFiles = 0;
 
-        for (const file of files) {
-            const reader = new FileReader();
-            reader.onload = async function(e) {
-                try {
-                    const typedarray = new Uint8Array(e.target.result);
-                    pdfDoc = await pdfjsLib.getDocument(typedarray).promise;
-                    let pdfText = '';
-                    for (let i = 1; i <= pdfDoc.numPages; i++) {
-                        const page = await pdfDoc.getPage(i);
-                        const textContent = await page.getTextContent();
-                        const pageText = textContent.items.map(item => item.str).join(' ');
-                        pdfText += pageText + '\n\n';
-                        showProgress(`Processing PDF (File ${processedFiles + 1}/${totalFiles}, Page ${i}/${pdfDoc.numPages})`, 
-                            Math.round((processedFiles + i / pdfDoc.numPages) / totalFiles * 100));
+        const processFile = async (file) => {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = async function(e) {
+                    try {
+                        const typedarray = new Uint8Array(e.target.result);
+                        const pdf = await pdfjsLib.getDocument(typedarray).promise;
+                        for (let i = 1; i <= pdf.numPages; i++) {
+                            const page = await pdf.getPage(i);
+                            const textContent = await page.getTextContent();
+                            const pageText = textContent.items.map(item => item.str).join(' ');
+                            textPages.push(pageText);
+                            showProgress(`Processing PDF (File ${processedFiles + 1}/${totalFiles}, Page ${i}/${pdf.numPages})`,
+                                Math.round((processedFiles + i / pdf.numPages) / totalFiles * 100));
+                        }
+                        pdf.destroy();
+                        resolve();
+                    } catch (error) {
+                        reject(error);
                     }
-                    fullText += pdfText;
-                    processedFiles++;
-                    if (processedFiles === totalFiles) {
-                        textPages = [fullText];
-                        currentPageIndex = 0;
-                        renderTextPage();
-                        document.getElementById('dictionary-section').classList.add('hidden');
-                        document.getElementById('reader-section').classList.add('visible');
-                        document.getElementById('text-content').style.display = 'block';
-                        hideProgress();
-                        pdfDoc.destroy();
-                    }
-                } catch (error) {
-                    console.error('Error processing PDF:', error);
-                    document.getElementById('text-content').innerHTML = 'Error processing PDF.';
-                    hideProgress();
-                }
-            };
-            reader.readAsArrayBuffer(file);
+                };
+                reader.readAsArrayBuffer(file);
+            });
+        };
+
+        try {
+            for (const file of files) {
+                await processFile(file);
+                processedFiles++;
+            }
+            currentPageIndex = 0;
+            renderTextPage();
+            document.getElementById('dictionary-section').classList.add('hidden');
+            document.getElementById('reader-section').classList.add('visible');
+            document.getElementById('text-content').style.display = 'block';
+            hideProgress();
+        } catch (error) {
+            console.error('Error processing PDF:', error);
+            document.getElementById('text-content').innerHTML = 'Error processing PDF.';
+            hideProgress();
         }
     }
 
