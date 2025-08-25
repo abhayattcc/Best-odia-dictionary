@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -498,7 +499,7 @@
     <div id="dictionary-section" class="dictionary-section">
         <h2>🌟 Abhayattcc Odia-English-Hindi-Dictionary-Reader 🌟</h2>
         <input type="text" id="searchInput" placeholder="Find a magic word!">
-        <ul id="suggestions" class="hidden"></ul>
+                              <ul id="suggestions" class="hidden"></ul>
         <div style="display: flex; gap: 10px; margin-bottom: 15px;">
             <input type="file" id="file-upload" accept=".pdf,.txt,.html" multiple>
             <button id="ocr-btn">📷 OCR</button>
@@ -575,938 +576,631 @@
     </div>
 </div>
 <script>
-var gk_isXlsx = false;
-var gk_xlsxFileLookup = {};
-var gk_fileData = {};
-function filledCell(cell) {
-    return cell !== '' && cell != null;
-}
-function loadFileData(filename) {
-    if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+    var gk_isXlsx = false;
+    var gk_xlsxFileLookup = {};
+    var gk_fileData = {};
+    function filledCell(cell) {
+        return cell !== '' && cell != null;
+    }
+    function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                    row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                    headerRowIndex = 0;
+                }
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex));
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+    }
+    let dbEnglishOdia, dbOdiaMeaning, dbEnglishHindi;
+    let defaultEnglishVoice, defaultHindiVoice, defaultOdiaVoice;
+    let debounceTimer;
+    let pdfDoc = null;
+    let currentPageIndex = 0;
+    let textPages = [];
+    let speechUtterances = [];
+    let currentSentenceIndex = -1;
+    let sentences = [];
+    let resultText = '';
+    let isReadingAloud = false;
+    let isPaused = false;
+    let activeUtterances = 0;
+    let ocrFileCache = new Map();
+    const cacheName = 'kids-word-adventure-cache-v2';
+    const dbFiles = {
+        english_odia: './data/english_odia.db.gz',
+        odia_meaning: './data/odia_meaning.db.gz',
+        english_hindi: './data/english_hindi.db.gz'
+    };
+    const filesToCache = [
+        './js/sql-wasm.wasm',
+        './js/pdf.min.js',
+        './js/pako.min.js',
+        './js/worker.min.js',
+        './js/tesseract-core.wasm.js',
+        './lang-data/eng.traineddata.gz',
+        './lang-data/hin.traineddata.gz',
+        './lang-data/ori.traineddata.gz',
+        ...Object.values(dbFiles)
+    ];
+    let voices = [];
+    let isTTSSupported = 'speechSynthesis' in window;
+
+    function showProgress(message, percentage) {
+        const progressContainer = document.getElementById('progress-container');
+        const progressFill = document.getElementById('progress-fill');
+        const progressText = document.getElementById('progress-text');
+        progressContainer.classList.add('visible');
+        progressFill.style.width = `${percentage}%`;
+        progressText.textContent = `${message} (${percentage}%)`;
+    }
+
+    function hideProgress() {
+        document.getElementById('progress-container').classList.remove('visible');
+    }
+
+    async function isCachePopulated() {
         try {
-            var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
-            var firstSheetName = workbook.SheetNames[0];
-            var worksheet = workbook.Sheets[firstSheetName];
-            var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
-            var filteredData = jsonData.filter(row => row.some(filledCell));
-            var headerRowIndex = filteredData.findIndex((row, index) =>
-                row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
-            );
-            if (headerRowIndex === -1 || headerRowIndex > 25) {
-                headerRowIndex = 0;
-            }
-            var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex));
-            csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
-            return csv;
-        } catch (e) {
-            console.error(e);
-            return "";
+            const cache = await caches.open(cacheName);
+            const cachedRequests = await cache.keys();
+            const cachedUrls = cachedRequests.map(req => req.url);
+            return filesToCache.every(url => cachedUrls.includes(url));
+        } catch (error) {
+            console.error('Error checking cache:', error);
+            return false;
         }
     }
-    return gk_fileData[filename] || "";
-}
-let dbEnglishOdia, dbOdiaMeaning, dbEnglishHindi;
-let defaultEnglishVoice, defaultHindiVoice, defaultOdiaVoice;
-let debounceTimer;
-let pdfDoc = null;
-let currentPageIndex = 0;
-let textPages = [];
-let speechUtterances = [];
-let currentSentenceIndex = -1;
-let sentences = [];
-let resultText = '';
-let isReadingAloud = false;
-let isPaused = false;
-let activeUtterances = 0;
-let ocrFileCache = new Map();
-const cacheName = 'kids-word-adventure-cache-v3';
-const dbFiles = {
-    english_odia: './data/english_odia.db.gz',
-    odia_meaning: './data/odia_meaning.db.gz',
-    english_hindi: './data/english_hindi.db.gz'
-};
-const filesToCache = [
-    './',
-    './index.html',
-    './js/sql-wasm.min.js',
-    './js/sql-wasm.wasm',
-    './js/pdf.min.js',
-    './js/pako.min.js',
-    './js/tesseract.min.js',
-    './js/worker.min.js',
-    './js/tesseract-core.wasm.js',
-    './lang-data/eng.traineddata.gz',
-    './lang-data/hin.traineddata.gz',
-    './lang-data/ori.traineddata.gz',
-    ...Object.values(dbFiles)
-];
-let voices = [];
-const isSpeechSupported = !!window.speechSynthesis && typeof SpeechSynthesisUtterance !== 'undefined';
 
-// Service Worker logic embedded in the HTML
-const swCode = `
-const cacheName = '${cacheName}';
-const filesToCache = ${JSON.stringify(filesToCache)};
+    async function cacheFiles() {
+        try {
+            const cache = await caches.open(cacheName);
+            const cachedRequests = await cache.keys();
+            const cachedUrls = cachedRequests.map(req => req.url);
+            const filesToFetch = filesToCache.filter(url => !cachedUrls.includes(url));
 
-self.addEventListener('install', (event) => {
-    event.waitUntil(
-        caches.open(cacheName).then((cache) => {
-            return Promise.all(
-                filesToCache.map((url) => {
-                    return fetch(url, { mode: 'no-cors' }).then((response) => {
-                        if (!response.ok) {
-                            console.error('Failed to cache:', url);
-                            return;
-                        }
-                        return cache.put(url, response);
-                    }).catch((error) => {
-                        console.error('Error caching:', url, error);
-                    });
-                })
-            ).then(() => self.skipWaiting());
-        })
-    );
-});
+            if (filesToFetch.length > 0) {
+                showProgress('Caching resources', 0);
+                const totalFiles = filesToFetch.length;
+                let loadedFiles = 0;
 
-self.addEventListener('activate', (event) => {
-    event.waitUntil(
-        caches.keys().then((cacheNames) => {
-            return Promise.all(
-                cacheNames.map((name) => {
-                    if (name !== cacheName) {
-                        return caches.delete(name);
+                for (const file of filesToFetch) {
+                    try {
+                        const response = await fetch(file);
+                        if (!response.ok) throw new Error(`Failed to fetch ${file}`);
+                        await cache.put(file, response.clone());
+                        loadedFiles++;
+                        showProgress('Caching resources', Math.round((loadedFiles / totalFiles) * 100));
+                    } catch (error) {
+                        console.error(`Error caching ${file}:`, error);
                     }
-                })
-            );
-        }).then(() => self.clients.claim())
-    );
-});
-
-self.addEventListener('fetch', (event) => {
-    event.respondWith(
-        caches.match(event.request).then((cachedResponse) => {
-            if (cachedResponse) {
-                return cachedResponse;
-            }
-            return fetch(event.request).then((response) => {
-                if (!response || response.status !== 200 || response.type !== 'basic') {
-                    return response;
                 }
-                const responseToCache = response.clone();
-                caches.open(cacheName).then((cache) => {
-                    cache.put(event.request, responseToCache);
-                });
-                return response;
-            }).catch(() => {
-                return caches.match('./index.html');
-            });
-        })
-    );
-});
-`;
-
-function showProgress(message, percentage) {
-    const progressContainer = document.getElementById('progress-container');
-    const progressFill = document.getElementById('progress-fill');
-    const progressText = document.getElementById('progress-text');
-    progressContainer.classList.add('visible');
-    progressFill.style.width = `${percentage}%`;
-    progressText.textContent = `${message} (${percentage}%)`;
-}
-
-function hideProgress() {
-    document.getElementById('progress-container').classList.remove('visible');
-}
-
-async function isCachePopulated() {
-    try {
-        const cache = await caches.open(cacheName);
-        const cachedRequests = await cache.keys();
-        const cachedUrls = cachedRequests.map(req => req.url);
-        return filesToCache.every(url => cachedUrls.includes(new URL(url, window.location.origin).href));
-    } catch (error) {
-        console.error('Error checking cache:', error);
-        return false;
-    }
-}
-
-async function cacheFiles() {
-    try {
-        const cache = await caches.open(cacheName);
-        const cachedRequests = await cache.keys();
-        const cachedUrls = cachedRequests.map(req => req.url);
-        const filesToFetch = filesToCache.filter(url => !cachedUrls.includes(new URL(url, window.location.origin).href));
-
-        if (filesToFetch.length > 0) {
-            showProgress('Caching resources', 0);
-            const totalFiles = filesToFetch.length;
-            let loadedFiles = 0;
-
-            for (const file of filesToFetch) {
-                try {
-                    const response = await fetch(file, { mode: 'no-cors' });
-                    if (!response.ok) throw new Error(`Failed to fetch ${file}`);
-                    await cache.put(file, response.clone());
-                    loadedFiles++;
-                    showProgress('Caching resources', Math.round((loadedFiles / totalFiles) * 100));
-                } catch (error) {
-                    console.error(`Error caching ${file}:`, error);
-                }
+                hideProgress();
+                localStorage.setItem('cachePopulated', 'true');
             }
+        } catch (error) {
+            console.error('Error opening cache:', error);
             hideProgress();
-            localStorage.setItem('cachePopulated', 'true');
         }
-    } catch (error) {
-        console.error('Error opening cache:', error);
-        hideProgress();
     }
-}
 
-async function loadResource(url) {
-    try {
-        const cache = await caches.open(cacheName);
-        const cachedResponse = await cache.match(url);
-        if (cachedResponse) return cachedResponse;
+    async function loadResource(url) {
+        try {
+            const cache = await caches.open(cacheName);
+            const cachedResponse = await cache.match(url);
+            if (cachedResponse) return cachedResponse;
 
-        const response = await fetch(url, { mode: 'no-cors' });
-        if (!response.ok) throw new Error(`Failed to fetch ${url}`);
-        await cache.put(url, response.clone());
-        return response;
-    } catch (error) {
-        console.error(`Error loading ${url}:`, error);
-        throw error;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`Failed to fetch ${url}`);
+            await cache.put(url, response.clone());
+            return response;
+        } catch (error) {
+            console.error(`Error loading ${url}:`, error);
+            throw error;
+        }
     }
-}
 
-async function initDatabases() {
-    try {
-        const SQL = await initSqlJs({
-            locateFile: file => `./js/${file}`
-        });
+    async function initDatabases() {
+        try {
+            const SQL = await initSqlJs({
+                locateFile: file => `./js/${file}`
+            });
 
-        const loadDatabase = async (url) => {
-            const response = await loadResource(url);
-            const arrayBuffer = await response.arrayBuffer();
-            const decompressed = pako.ungzip(new Uint8Array(arrayBuffer));
-            return new SQL.Database(decompressed);
+            const loadDatabase = async (url) => {
+                const response = await loadResource(url);
+                const arrayBuffer = await response.arrayBuffer();
+                const decompressed = pako.ungzip(new Uint8Array(arrayBuffer));
+                return new SQL.Database(decompressed);
+            };
+
+            showProgress('Loading dictionaries', 0);
+            dbEnglishOdia = await loadDatabase(dbFiles.english_odia);
+            showProgress('Loading dictionaries', 33);
+            dbOdiaMeaning = await loadDatabase(dbFiles.odia_meaning);
+            showProgress('Loading dictionaries', 66);
+            dbEnglishHindi = await loadDatabase(dbFiles.english_hindi);
+            showProgress('Loading dictionaries', 100);
+            hideProgress();
+        } catch (error) {
+            console.error('Error loading databases:', error);
+            document.getElementById('results').innerHTML = 'Error loading dictionaries. Please check your internet connection.';
+            hideProgress();
+        }
+    }
+
+    function trimInput(input) {
+        return input.trim().toLowerCase();
+    }
+
+    function filterTextByLanguage(text, lang) {
+        const odiaRegex = /[\u0B00-\u0B7F\()/,"':;!?.-]+/g;
+        const hindiRegex = /[\u0900-\u097F0-9]+/g;
+        const englishRegex = /[A-Za-z]+/g;
+
+        if (lang.startsWith('or')) {
+            return (text.match(odiaRegex) || []).join(' ');
+        } else if (lang.startsWith('hi')) {
+            return (text.match(hindiRegex) || []).join(' ');
+        } else if (lang.startsWith('en')) {
+            return (text.match(englishRegex) || []).join(' ');
+        }
+        return '';
+    }
+
+    function saveCustomEntry(word, english, odia, odia_spelling, odia_meaning, targetElement) {
+        if (!english && !odia && !odia_spelling && !odia_meaning) {
+            alert('Please fill in at least one field.');
+            return;
+        }
+        let customDictionary = JSON.parse(localStorage.getItem('customDictionary') || '{}');
+        customDictionary[word.toLowerCase()] = {
+            English: english || '',
+            odia: odia || '',
+            odia_spelling: odia_spelling || '',
+            odia_meaning: odia_meaning || ''
         };
-
-        showProgress('Loading dictionaries', 0);
-        dbEnglishOdia = await loadDatabase(dbFiles.english_odia);
-        showProgress('Loading dictionaries', 33);
-        dbOdiaMeaning = await loadDatabase(dbFiles.odia_meaning);
-        showProgress('Loading dictionaries', 66);
-        dbEnglishHindi = await loadDatabase(dbFiles.english_hindi);
-        showProgress('Loading dictionaries', 100);
-        hideProgress();
-    } catch (error) {
-        console.error('Error loading databases:', error);
-        document.getElementById('results').innerHTML = 'Error loading dictionaries. Please ensure all files are available locally.';
-        hideProgress();
+        localStorage.setItem('customDictionary', JSON.stringify(customDictionary));
+        searchWord(word, targetElement);
+        alert('Word saved successfully!');
     }
-}
 
-function trimInput(input) {
-    return input.trim().toLowerCase();
-}
-
-function filterTextByLanguage(text, lang) {
-    const odiaRegex = /[\u0B00-\u0B7F\()/,"':;!?.-]+/g;
-    const hindiRegex = /[\u0900-\u097F0-9]+/g;
-    const englishRegex = /[A-Za-z]+/g;
-    if (lang.startsWith('or')) {
-        return (text.match(odiaRegex) || []).join(' ');
-    } else if (lang.startsWith('hi')) {
-        return (text.match(hindiRegex) || []).join(' ');
-    } else if (lang.startsWith('en')) {
-        return (text.match(englishRegex) || []).join(' ');
-    }
-    return '';
-}
-
-function saveCustomEntry(word, english, odia, odia_spelling, odia_meaning, targetElement) {
-    if (!english && !odia && !odia_spelling && !odia_meaning) {
-        alert('Please fill in at least one field.');
-        return;
-    }
-    let customDictionary = JSON.parse(localStorage.getItem('customDictionary') || '{}');
-    customDictionary[word.toLowerCase()] = {
-        English: english || '',
-        odia: odia || '',
-        odia_spelling: odia_spelling || '',
-        odia_meaning: odia_meaning || ''
-    };
-    localStorage.setItem('customDictionary', JSON.stringify(customDictionary));
-    searchWord(word, targetElement);
-    alert('Word saved successfully!');
-}
-
-function speakResults() {
-    if (!isSpeechSupported) return;
-    if (!resultText) {
-        alert("No text available.");
-        return;
-    }
-    stopSpeech();
-    const voiceMap = {
-        'en': defaultEnglishVoice,
-        'hi': defaultHindiVoice,
-        'or': defaultOdiaVoice
-    };
-    speechUtterances = [];
-    activeUtterances = 0;
-    ['en', 'hi', 'or'].forEach(langPrefix => {
-        const filteredText = filterTextByLanguage(resultText, langPrefix);
-        if (filteredText) {
-            const voice = voiceMap[langPrefix];
-            if (voice) {
-                const utterance = new SpeechSynthesisUtterance(filteredText);
-                utterance.voice = voice;
-                utterance.lang = voice.lang;
-                utterance.rate = 0.8;
-                utterance.pitch = 1.0;
-                utterance.onend = () => {
-                    activeUtterances--;
-                    if (activeUtterances === 0) {
-                        document.getElementById('result-speak').disabled = false;
-                        document.getElementById('result-stop').disabled = true;
-                    }
-                };
-                speechUtterances.push(utterance);
-                activeUtterances++;
-            }
+    function speakResults() {
+        if (!isTTSSupported) {
+            alert("Text-to-speech is not supported in this browser.");
+            return;
         }
-    });
-    if (activeUtterances > 0) {
-        speechUtterances.forEach(utterance => window.speechSynthesis.speak(utterance));
-        document.getElementById('result-speak').disabled = true;
-        document.getElementById('result-stop').disabled = false;
-    } else {
-        document.getElementById('result-speak').disabled = false;
-        document.getElementById('result-stop').disabled = true;
-    }
-}
-
-function searchWord(word, targetElement = document.getElementById('results')) {
-    word = trimInput(word);
-    targetElement.innerHTML = '';
-    const suggestionsUl = targetElement === document.getElementById('results') 
-        ? document.getElementById('suggestions') 
-        : document.getElementById('popup-content');
-    const dictionarySection = document.getElementById('dictionary-section');
-    const editDictionaryBtn = document.getElementById('edit-dictionary-btn');
-    const editDictionaryForm = document.getElementById('edit-dictionary-form');
-
-    suggestionsUl.classList.remove('visible');
-    suggestionsUl.classList.add('hidden');
-    editDictionaryBtn.classList.add('hidden');
-    editDictionaryForm.classList.add('hidden');
-
-    if (!word) {
-        return;
-    }
-
-    let foundExact = false;
-    let entries = [];
-
-    // Check custom dictionary
-    const customDictionary = JSON.parse(localStorage.getItem('customDictionary') || '{}');
-    if (customDictionary[word]) {
-        entries.push(customDictionary[word]);
-        foundExact = true;
-    }
-
-    // Query databases for all matches
-    if (dbEnglishOdia) {
-        let stmt = dbEnglishOdia.prepare("SELECT English, odia FROM dictionary WHERE LOWER(English) = ? OR LOWER(odia) = ?");
-        stmt.bind([word, word]);
-        while (stmt.step()) {
-            const row = stmt.getAsObject();
-            entries.push({ English: row.English, odia: row.odia });
-            foundExact = true;
+        if (!resultText) {
+            alert("No text available.");
+            return;
         }
-        stmt.free();
-    }
-
-    if (dbEnglishHindi) {
-        let stmt = dbEnglishHindi.prepare("SELECT English, hindi FROM dictionary WHERE LOWER(English) = ? OR LOWER(hindi) = ?");
-        stmt.bind([word, word]);
-        while (stmt.step()) {
-            const row = stmt.getAsObject();
-            const existingEntry = entries.find(e => e.English === row.English);
-            if (existingEntry) {
-                existingEntry.hindi = row.hindi;
-            } else {
-                entries.push({ English: row.English, hindi: row.hindi });
-            }
-            foundExact = true;
-        }
-        stmt.free();
-    }
-
-    if (dbOdiaMeaning) {
-        let stmt = dbOdiaMeaning.prepare("SELECT odia, odia_spelling, odia_meaning FROM dictionary WHERE LOWER(odia) = ? OR LOWER(odia_spelling) = ?");
-        stmt.bind([word, word]);
-        while (stmt.step()) {
-            const row = stmt.getAsObject();
-            const existingEntry = entries.find(e => e.odia === row.odia);
-            if (existingEntry) {
-                existingEntry.odia_spelling = row.odia_spelling;
-                existingEntry.odia_meaning = row.odia_meaning;
-            } else {
-                entries.push({ odia: row.odia, odia_spelling: row.odia_spelling, odia_meaning: row.odia_meaning });
-            }
-            foundExact = true;
-        }
-        stmt.free();
-    }
-
-    // Cross-reference to fill missing fields
-    for (let entry of entries) {
-        if (entry.English && !entry.odia && dbEnglishOdia) {
-            let stmt = dbEnglishOdia.prepare("SELECT odia FROM dictionary WHERE LOWER(English) = ?");
-            stmt.bind([entry.English.toLowerCase()]);
-            while (stmt.step()) {
-                entry.odia = entry.odia || stmt.getAsObject().odia;
-            }
-            stmt.free();
-        }
-
-        if (entry.English && !entry.hindi && dbEnglishHindi) {
-            let stmt = dbEnglishHindi.prepare("SELECT hindi FROM dictionary WHERE LOWER(English) = ?");
-            stmt.bind([entry.English.toLowerCase()]);
-            while (stmt.step()) {
-                entry.hindi = entry.hindi || stmt.getAsObject().hindi;
-            }
-            stmt.free();
-        }
-
-        if (entry.odia && !entry.English && dbEnglishOdia) {
-            let stmt = dbEnglishOdia.prepare("SELECT English FROM dictionary WHERE LOWER(odia) = ?");
-            stmt.bind([entry.odia.toLowerCase()]);
-            while (stmt.step()) {
-                entry.English = entry.English || stmt.getAsObject().English;
-                if (entry.English && !entry.hindi && dbEnglishHindi) {
-                    let stmt2 = dbEnglishHindi.prepare("SELECT hindi FROM dictionary WHERE LOWER(English) = ?");
-                    stmt2.bind([entry.English.toLowerCase()]);
-                    while (stmt2.step()) {
-                        entry.hindi = entry.hindi || stmt2.getAsObject().hindi;
-                    }
-                    stmt2.free();
+        stopSpeech();
+        const voiceMap = {
+            'or': defaultOdiaVoice,
+            'hi': defaultHindiVoice,
+            'en': defaultEnglishVoice
+        };
+        speechUtterances = [];
+        activeUtterances = 0;
+        ['or', 'hi', 'en'].forEach(langPrefix => {
+            const filteredText = filterTextByLanguage(resultText, langPrefix);
+            if (filteredText) {
+                const voice = voiceMap[langPrefix];
+                if (voice) {
+                    const utterance = new SpeechSynthesisUtterance(filteredText);
+                    utterance.voice = voice;
+                    utterance.lang = voice.lang;
+                    utterance.rate = 0.7;
+                    utterance.pitch = 1.0;
+                    utterance.onend = () => {
+                        activeUtterances--;
+                        if (activeUtterances === 0) {
+                            document.getElementById('result-speak').disabled = false;
+                            document.getElementById('result-stop').disabled = true;
+                        }
+                    };
+                    speechUtterances.push(utterance);
+                    activeUtterances++;
                 }
             }
-            stmt.free();
+        });
+        if (activeUtterances > 0) {
+            speechUtterances.forEach(utterance => window.speechSynthesis.speak(utterance));
+            document.getElementById('result-speak').disabled = true;
+            document.getElementById('result-stop').disabled = false;
+        } else {
+            document.getElementById('result-speak').disabled = false;
+            document.getElementById('result-stop').disabled = true;
+        }
+    }
+
+    function searchWord(word, targetElement = document.getElementById('results')) {
+        word = trimInput(word);
+        targetElement.innerHTML = '';
+        const suggestionsUl = targetElement === document.getElementById('results') 
+            ? document.getElementById('suggestions') 
+            : document.getElementById('popup-content');
+        const dictionarySection = document.getElementById('dictionary-section');
+        const editDictionaryBtn = document.getElementById('edit-dictionary-btn');
+        const editDictionaryForm = document.getElementById('edit-dictionary-form');
+
+        suggestionsUl.classList.remove('visible');
+        suggestionsUl.classList.add('hidden');
+        editDictionaryBtn.classList.add('hidden');
+        editDictionaryForm.classList.add('hidden');
+
+        if (!word) {
+            return;
         }
 
-        if (entry.odia && (!entry.odia_spelling || !entry.odia_meaning) && dbOdiaMeaning) {
-            let stmt = dbOdiaMeaning.prepare("SELECT odia_spelling, odia_meaning FROM dictionary WHERE LOWER(odia) = ?");
-            stmt.bind([entry.odia.toLowerCase()]);
+        let entries = [];
+
+        // Check custom dictionary
+        const customDictionary = JSON.parse(localStorage.getItem('customDictionary') || '{}');
+        if (customDictionary[word]) {
+            entries.push(customDictionary[word]);
+        }
+
+        // Query databases for all matches
+        if (dbEnglishOdia) {
+            let stmt = dbEnglishOdia.prepare("SELECT English, odia FROM dictionary WHERE LOWER(English) = ? OR LOWER(odia) = ?");
+            stmt.bind([word, word]);
             while (stmt.step()) {
                 const row = stmt.getAsObject();
-                entry.odia_spelling = entry.odia_spelling || row.odia_spelling;
-                entry.odia_meaning = entry.odia_meaning || row.odia_meaning;
+                entries.push({ English: row.English, odia: row.odia });
             }
             stmt.free();
         }
-    }
 
-    // Merge entries with same spelling
-    const mergedEntries = [];
-    const seen = new Set();
-    for (let entry of entries) {
-        const key = `${entry.English || ''}|${entry.odia || ''}`;
-        if (!seen.has(key)) {
-            seen.add(key);
-            mergedEntries.push({
-                English: entry.English || '',
-                hindi: entry.hindi || '',
-                odia: entry.odia || '',
-                odia_spelling: entry.odia_spelling || '',
-                odia_meaning: entry.odia_meaning || ''
-            });
-        } else {
-            const existing = mergedEntries.find(e => e.English === (entry.English || '') && e.odia === (entry.odia || ''));
-            if (existing) {
-                existing.hindi = existing.hindi || entry.hindi || '';
-                existing.odia_spelling = existing.odia_spelling || entry.odia_spelling || '';
-                existing.odia_meaning = existing.odia_meaning || entry.odia_meaning || '';
+        if (dbEnglishHindi) {
+            let stmt = dbEnglishHindi.prepare("SELECT English, hindi FROM dictionary WHERE LOWER(English) = ? OR LOWER(hindi) = ?");
+            stmt.bind([word, word]);
+            while (stmt.step()) {
+                const row = stmt.getAsObject();
+                const existingEntry = entries.find(e => e.English === row.English);
+                if (existingEntry) {
+                    existingEntry.hindi = row.hindi;
+                } else {
+                    entries.push({ English: row.English, hindi: row.hindi });
+                }
+            }
+            stmt.free();
+        }
+
+        if (dbOdiaMeaning) {
+            let stmt = dbOdiaMeaning.prepare("SELECT odia, odia_spelling, odia_meaning FROM dictionary WHERE LOWER(odia) = ? OR LOWER(odia_spelling) = ?");
+            stmt.bind([word, word]);
+            while (stmt.step()) {
+                const row = stmt.getAsObject();
+                const existingEntry = entries.find(e => e.odia === row.odia);
+                if (existingEntry) {
+                    existingEntry.odia_spelling = row.odia_spelling;
+                    existingEntry.odia_meaning = row.odia_meaning;
+                } else {
+                    entries.push({ odia: row.odia, odia_spelling: row.odia_spelling, odia_meaning: row.odia_meaning });
+                }
+            }
+            stmt.free();
+        }
+
+        // Cross-reference to fill missing fields
+        for (let entry of entries) {
+            if (entry.English && !entry.odia && dbEnglishOdia) {
+                let stmt = dbEnglishOdia.prepare("SELECT odia FROM dictionary WHERE LOWER(English) = ?");
+                stmt.bind([entry.English.toLowerCase()]);
+                while (stmt.step()) {
+                    entry.odia = entry.odia || stmt.getAsObject().odia;
+                }
+                stmt.free();
+            }
+
+            if (entry.English && !entry.hindi && dbEnglishHindi) {
+                let stmt = dbEnglishHindi.prepare("SELECT hindi FROM dictionary WHERE LOWER(English) = ?");
+                stmt.bind([entry.English.toLowerCase()]);
+                while (stmt.step()) {
+                    entry.hindi = entry.hindi || stmt.getAsObject().hindi;
+                }
+                stmt.free();
+            }
+
+            if (entry.odia && !entry.English && dbEnglishOdia) {
+                let stmt = dbEnglishOdia.prepare("SELECT English FROM dictionary WHERE LOWER(odia) = ?");
+                stmt.bind([entry.odia.toLowerCase()]);
+                while (stmt.step()) {
+                    entry.English = entry.English || stmt.getAsObject().English;
+                    if (entry.English && !entry.hindi && dbEnglishHindi) {
+                        let stmt2 = dbEnglishHindi.prepare("SELECT hindi FROM dictionary WHERE LOWER(English) = ?");
+                        stmt2.bind([entry.English.toLowerCase()]);
+                        while (stmt2.step()) {
+                            entry.hindi = entry.hindi || stmt2.getAsObject().hindi;
+                        }
+                        stmt2.free();
+                    }
+                }
+                stmt.free();
+            }
+
+            if (entry.odia && (!entry.odia_spelling || !entry.odia_meaning) && dbOdiaMeaning) {
+                let stmt = dbOdiaMeaning.prepare("SELECT odia_spelling, odia_meaning FROM dictionary WHERE LOWER(odia) = ?");
+                stmt.bind([entry.odia.toLowerCase()]);
+                while (stmt.step()) {
+                    const row = stmt.getAsObject();
+                    entry.odia_spelling = entry.odia_spelling || row.odia_spelling;
+                    entry.odia_meaning = entry.odia_meaning || row.odia_meaning;
+                }
+                stmt.free();
             }
         }
-    }
 
-    let displayParts = [];
-    mergedEntries.forEach(entry => {
-        let parts = [];
-        if (entry.English) parts.push(`English: ${entry.English}`);
-        if (entry.hindi) parts.push(`Hindi: ${entry.hindi}`);
-        if (entry.odia) parts.push(`Odia: ${entry.odia}`);
-        if (entry.odia_spelling) parts.push(`Odia Spelling: ${entry.odia_spelling}`);
-        if (entry.odia_meaning) parts.push(`Odia Meaning: ${entry.odia_meaning}`);
-        if (parts.length > 0) {
-            displayParts.push(parts.join(' | '));
+        // Merge entries with same spelling
+        const mergedEntries = [];
+        const seen = new Set();
+        for (let entry of entries) {
+            const key = `${entry.English || ''}|${entry.odia || ''}`;
+            if (!seen.has(key)) {
+                seen.add(key);
+                mergedEntries.push({
+                    English: entry.English || '',
+                    hindi: entry.hindi || '',
+                    odia: entry.odia || '',
+                    odia_spelling: entry.odia_spelling || '',
+                    odia_meaning: entry.odia_meaning || ''
+                });
+            } else {
+                const existing = mergedEntries.find(e => e.English === (entry.English || '') && e.odia === (entry.odia || ''));
+                if (existing) {
+                    existing.hindi = existing.hindi || entry.hindi || '';
+                    existing.odia_spelling = existing.odia_spelling || entry.odia_spelling || '';
+                    existing.odia_meaning = existing.odia_meaning || entry.odia_meaning || '';
+                }
+            }
         }
-    });
 
-    let combinedText = displayParts.join('<br><br>');
+        let displayParts = [];
+        mergedEntries.forEach(entry => {
+            let parts = [];
+            if (entry.odia) parts.push(` ${entry.odia}`);
+            if (entry.odia_spelling) parts.push(` ${entry.odia_spelling}`);
+            if (entry.odia_meaning) parts.push(` ${entry.odia_meaning}`);
+            if (entry.hindi) parts.push(` ${entry.hindi}`);
+            if (entry.English) parts.push(` ${entry.English}`);
+            if (parts.length > 0) {
+                displayParts.push(parts.join(' | '));
+            }
+        });
 
-    if (foundExact && displayParts.length > 0) {
-        if (targetElement === document.getElementById('results')) {
-            const resultsDiv = document.getElementById('results');
-            const suggestionsUl = document.getElementById('suggestions');
-            const dictionarySection = document.getElementById('dictionary-section');
-            const fileUploadDiv = dictionarySection.querySelector('div[style*="display: flex; gap: 10px; margin-bottom: 15px;"]');
+        let combinedText = displayParts.join('<br><br>');
 
-            dictionarySection.insertBefore(resultsDiv, suggestionsUl);
-            dictionarySection.insertBefore(suggestionsUl, resultsDiv.nextSibling);
-
-            targetElement.innerHTML = `<div>${combinedText}</div>`;
-            resultText = combinedText;
-            if (isSpeechSupported) {
-                document.getElementById('result-speak').disabled = false;
+        if (displayParts.length > 0) {
+            if (targetElement === document.getElementById('results')) {
+                targetElement.innerHTML = `<div>${combinedText}</div>`;
+                resultText = combinedText;
+                document.getElementById('results').style.display = 'block';
+                document.getElementById('suggestions').classList.remove('visible');
+                document.getElementById('suggestions').classList.add('hidden');
+                document.getElementById('result-speak').disabled = !isTTSSupported;
                 document.getElementById('result-stop').disabled = true;
-                speakResults();
+                if (isTTSSupported) speakResults();
+            } else {
+                targetElement.innerHTML = `<div>${combinedText}</div>`;
             }
         } else {
-            targetElement.innerHTML = `<div>${combinedText}</div>`;
-        }
-    } else {
-        if (targetElement === document.getElementById('results')) {
-            const resultsDiv = document.getElementById('results');
-            const suggestionsUl = document.getElementById('suggestions');
-            const dictionarySection = document.getElementById('dictionary-section');
-            const fileUploadDiv = dictionarySection.querySelector('div[style*="display: flex; gap: 10px; margin-bottom: 15px;"]');
-
-            dictionarySection.insertBefore(suggestionsUl, resultsDiv);
-            dictionarySection.insertBefore(resultsDiv, suggestionsUl.nextSibling);
-
-            const notFoundMessage = 'ଆମେ ଆପଣଙ୍କ ଶବ୍ଦ ଖୋଜିପାରୁନାହିଁ, ଦୟା କରି ଭଲରେ ଶବ୍ଦ ଖୋଜନ୍ତୁ.';
-            targetElement.innerHTML = `<div>${notFoundMessage}</div>`;
-            resultText = notFoundMessage;
-            editDictionaryBtn.classList.remove('hidden');
-            loadSuggestions(word);
-            if (isSpeechSupported && defaultOdiaVoice) {
-                stopSpeech();
-                const utterance = new SpeechSynthesisUtterance(notFoundMessage);
-                utterance.voice = defaultOdiaVoice;
-                utterance.lang = defaultOdiaVoice.lang;
-                utterance.rate = 0.8;
-                utterance.pitch = 1.0;
-                utterance.onend = () => {
-                    document.getElementById('result-speak').disabled = false;
-                    document.getElementById('result-stop').disabled = true;
-                };
-                speechUtterances = [utterance];
-                window.speechSynthesis.speak(utterance);
-                document.getElementById('result-speak').disabled = true;
-                document.getElementById('result-stop').disabled = false;
+            if (targetElement === document.getElementById('results')) {
+                const notFoundMessage = 'ଆମେ ଆପଣଙ୍କ ଶବ୍ଦ ଖୋଜିପାରୁନାହିଁ, ଦୟା କରି ଭଲରେ ଶବ୍ଦ ଖୋଜନ୍ତୁ.';
+                targetElement.innerHTML = `<div>${notFoundMessage}</div>`;
+                resultText = notFoundMessage;
+                document.getElementById('results').style.display = 'block';
+                document.getElementById('suggestions').classList.remove('visible');
+                document.getElementById('suggestions').classList.add('hidden');
+                document.getElementById('result-speak').disabled = !isTTSSupported;
+                document.getElementById('result-stop').disabled = true;
+                editDictionaryBtn.classList.remove('hidden');
+                if (isTTSSupported && defaultOdiaVoice) {
+                    stopSpeech();
+                    const utterance = new SpeechSynthesisUtterance(notFoundMessage);
+                    utterance.voice = defaultOdiaVoice;
+                    utterance.lang = defaultOdiaVoice.lang;
+                    utterance.rate = 0.8;
+                    utterance.pitch = 1.0;
+                    utterance.onend = () => {
+                        document.getElementById('result-speak').disabled = false;
+                        document.getElementById('result-stop').disabled = true;
+                    };
+                    speechUtterances = [utterance];
+                    window.speechSynthesis.speak(utterance);
+                    document.getElementById('result-speak').disabled = true;
+                    document.getElementById('result-stop').disabled = false;
+                }
+            } else {
+                targetElement.innerHTML = `<div>Word not found.</div>`;
             }
-        } else {
-            targetElement.innerHTML = `<div>Word not found.</div>`;
-            loadSuggestions(word, document.getElementById('popup-content'));
         }
-    }
 
-    if (targetElement === document.getElementById('popup-content')) {
-        if (isSpeechSupported) {
+        if (targetElement === document.getElementById('popup-content')) {
             document.getElementById('popup-speak').setAttribute('data-word', combinedText);
-            document.getElementById('popup-speak').disabled = false;
+            document.getElementById('popup-speak').disabled = !isTTSSupported;
             document.getElementById('popup-stop').disabled = true;
         }
     }
-}
 
-function loadSuggestions(word, targetElement = document.getElementById('suggestions')) {
-    word = trimInput(word);
-    if (!word) {
-        targetElement.classList.add('hidden');
-        return;
-    }
-
-    let suggestions = { beginning: [], ending: [], middle: [] };
-
-    function categorizeSuggestion(s, query) {
-        if (s.toLowerCase().startsWith(query)) {
-            suggestions.beginning.push(s);
-        } else if (s.toLowerCase().endsWith(query)) {
-            suggestions.ending.push(s);
-        } else if (s.toLowerCase().includes(query)) {
-            suggestions.middle.push(s);
-        }
-    }
-
-    const customDictionary = JSON.parse(localStorage.getItem('customDictionary') || '{}');
-    Object.keys(customDictionary).forEach(key => {
-        const entry = customDictionary[key];
-        [entry.English, entry.odia, entry.odia_spelling, entry.odia_meaning].forEach(s => {
-            if (s && s.toLowerCase().includes(word)) {
-                categorizeSuggestion(s, word);
+    function loadSuggestions(word, targetElement = document.getElementById('suggestions')) {
+        word = trimInput(word);
+        if (!word) {
+            targetElement.classList.add('hidden');
+            if (targetElement === document.getElementById('suggestions')) {
+                document.getElementById('results').style.display = 'none';
             }
+            return;
+        }
+
+        let suggestions = [];
+
+        // Check custom dictionary
+        const customDictionary = JSON.parse(localStorage.getItem('customDictionary') || '{}');
+        Object.keys(customDictionary).forEach(key => {
+            const entry = customDictionary[key];
+            [entry.English, entry.odia, entry.odia_spelling, entry.hindi].forEach(s => {
+                if (s && s.toLowerCase().includes(word)) {
+                    suggestions.push(s);
+                }
+            });
         });
-    });
 
-    if (dbEnglishOdia) {
-        let stmt = dbEnglishOdia.prepare("SELECT English, odia FROM dictionary WHERE LOWER(English) LIKE ? OR LOWER(odia) LIKE ? LIMIT 10");
-        stmt.bind([`%${word}%`, `%${word}%`]);
-        while (stmt.step()) {
-            const row = stmt.getAsObject();
-            categorizeSuggestion(row.English, word);
-            categorizeSuggestion(row.odia, word);
+        // Query databases for matches
+        if (dbEnglishOdia) {
+            let stmt = dbEnglishOdia.prepare("SELECT English, odia FROM dictionary WHERE LOWER(English) LIKE ? OR LOWER(odia) LIKE ? LIMIT 10");
+            stmt.bind([`%${word}%`, `%${word}%`]);
+            while (stmt.step()) {
+                const row = stmt.getAsObject();
+                if (row.English) suggestions.push(row.English);
+                if (row.odia) suggestions.push(row.odia);
+            }
+            stmt.free();
         }
-        stmt.free();
-    }
 
-    if (dbEnglishHindi) {
-        let stmt = dbEnglishHindi.prepare("SELECT English, hindi FROM dictionary WHERE LOWER(English) LIKE ? OR LOWER(hindi) LIKE ? LIMIT 10");
-        stmt.bind([`%${word}%`, `%${word}%`]);
-        while (stmt.step()) {
-            const row = stmt.getAsObject();
-            categorizeSuggestion(row.English, word);
-            categorizeSuggestion(row.hindi, word);
+        if (dbEnglishHindi) {
+            let stmt = dbEnglishHindi.prepare("SELECT English, hindi FROM dictionary WHERE LOWER(English) LIKE ? OR LOWER(hindi) LIKE ? LIMIT 10");
+            stmt.bind([`%${word}%`, `%${word}%`]);
+            while (stmt.step()) {
+                const row = stmt.getAsObject();
+                if (row.English) suggestions.push(row.English);
+                if (row.hindi) suggestions.push(row.hindi);
+            }
+            stmt.free();
         }
-        stmt.free();
-    }
 
-    if (dbOdiaMeaning) {
-        let stmt = dbOdiaMeaning.prepare("SELECT odia, odia_spelling FROM dictionary WHERE LOWER(odia) LIKE ? OR LOWER(odia_spelling) LIKE ? LIMIT 10");
-        stmt.bind([`%${word}%`, `%${word}%`]);
-        while (stmt.step()) {
-            const row = stmt.getAsObject();
-            categorizeSuggestion(row.odia, word);
-            categorizeSuggestion(row.odia_spelling, word);
+        if (dbOdiaMeaning) {
+            let stmt = dbOdiaMeaning.prepare("SELECT odia, odia_spelling FROM dictionary WHERE LOWER(odia) LIKE ? OR LOWER(odia_spelling) LIKE ? LIMIT 10");
+            stmt.bind([`%${word}%`, `%${word}%`]);
+            while (stmt.step()) {
+                const row = stmt.getAsObject();
+                if (row.odia) suggestions.push(row.odia);
+                if (row.odia_spelling) suggestions.push(row.odia_spelling);
+            }
+            stmt.free();
         }
-        stmt.free();
-    }
 
-    const allSuggestions = [
-        ...suggestions.beginning,
-        ...suggestions.ending,
-        ...suggestions.middle
-    ].slice(0, 10);
+        // Check for exact match and place it at the top
+        let exactMatch = null;
+        if (customDictionary[word]) {
+            const entry = customDictionary[word];
+            [entry.English, entry.odia, entry.odia_spelling, entry.hindi].forEach(s => {
+                if (s && s.toLowerCase() === word) {
+                    exactMatch = s;
+                }
+            });
+        }
+        if (!exactMatch && dbEnglishOdia) {
+            let stmt = dbEnglishOdia.prepare("SELECT English, odia FROM dictionary WHERE LOWER(English) = ? OR LOWER(odia) = ?");
+            stmt.bind([word, word]);
+            while (stmt.step()) {
+                const row = stmt.getAsObject();
+                if (row.English.toLowerCase() === word) exactMatch = row.English;
+                else if (row.odia.toLowerCase() === word) exactMatch = row.odia;
+            }
+            stmt.free();
+        }
+        if (!exactMatch && dbEnglishHindi) {
+            let stmt = dbEnglishHindi.prepare("SELECT English, hindi FROM dictionary WHERE LOWER(English) = ? OR LOWER(hindi) = ?");
+            stmt.bind([word, word]);
+            while (stmt.step()) {
+                const row = stmt.getAsObject();
+                if (row.English.toLowerCase() === word) exactMatch = row.English;
+                else if (row.hindi.toLowerCase() === word) exactMatch = row.hindi;
+            }
+            stmt.free();
+        }
+        if (!exactMatch && dbOdiaMeaning) {
+            let stmt = dbOdiaMeaning.prepare("SELECT odia, odia_spelling FROM dictionary WHERE LOWER(odia) = ? OR LOWER(odia_spelling) = ?");
+            stmt.bind([word, word]);
+            while (stmt.step()) {
+                const row = stmt.getAsObject();
+                if (row.odia.toLowerCase() === word) exactMatch = row.odia;
+                else if (row.odia_spelling.toLowerCase() === word) exactMatch = row.odia_spelling;
+            }
+            stmt.free();
+        }
 
-    if (allSuggestions.length > 0) {
-        targetElement.innerHTML = allSuggestions.map(s => 
-            `<li onclick="selectSuggestion('${s.replace(/'/g, "\\'")}', ${targetElement === document.getElementById('suggestions') ? 'true' : 'false'})">${s}</li>`
-        ).join('');
-        setTimeout(() => {
+        // Remove duplicates and sort
+        suggestions = [...new Set(suggestions)];
+        if (exactMatch) {
+            suggestions = suggestions.filter(s => s.toLowerCase() !== exactMatch.toLowerCase());
+            suggestions.unshift(exactMatch);
+        }
+        suggestions = suggestions.slice(0, 10);
+
+        if (suggestions.length > 0) {
+            targetElement.innerHTML = suggestions.map(s => 
+                `<li onclick="selectSuggestion('${s.replace(/'/g, "\\'")}', ${targetElement === document.getElementById('suggestions') ? 'true' : 'false'})">${s}</li>`
+            ).join('');
             targetElement.classList.remove('hidden');
             targetElement.classList.add('visible');
-        }, 0);
-    } else {
-        targetElement.classList.remove('visible');
-        targetElement.classList.add('hidden');
-    }
-}
-
-function selectSuggestion(word, isDictionarySection) {
-    if (isDictionarySection) {
-        document.getElementById('searchInput').value = word;
-        searchWord(word);
-        const suggestionsUl = document.getElementById('suggestions');
-        const resultsDiv = document.getElementById('results');
-        const dictionarySection = document.getElementById('dictionary-section');
-        dictionarySection.insertBefore(resultsDiv, suggestionsUl);
-        suggestionsUl.classList.remove('visible');
-        suggestionsUl.classList.add('hidden');
-    } else {
-        searchWord(word, document.getElementById('popup-content'));
-    }
-}
-
-function debounce(func, wait) {
-    return function(...args) {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => func.apply(this, args), wait);
-    };
-}
-
-function loadTextFile(files) {
-    let fullText = '';
-    const totalFiles = files.length;
-    let processedFiles = 0;
-
-    for (const file of files) {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            let content = e.target.result;
-            if (file.name.endsWith('.html')) {
-                const div = document.createElement('div');
-                div.innerHTML = content;
-                content = div.textContent;
+            if (targetElement === document.getElementById('suggestions')) {
+                document.getElementById('results').style.display = 'none';
             }
-            fullText += content + '\n\n';
-            processedFiles++;
-            showProgress('Processing text file', Math.round((processedFiles / totalFiles) * 100));
-
-            if (processedFiles === totalFiles) {
-                textPages = [fullText];
-                currentPageIndex = 0;
-                renderTextPage();
-                document.getElementById('dictionary-section').classList.add('hidden');
-                document.getElementById('reader-section').classList.add('visible');
-                document.getElementById('text-content').style.display = 'block';
-                hideProgress();
+        } else {
+            targetElement.classList.remove('visible');
+            targetElement.classList.add('hidden');
+            if (targetElement === document.getElementById('suggestions')) {
+                document.getElementById('results').style.display = 'block';
+                searchWord(word);
+            } else {
+                targetElement.innerHTML = `<div>No suggestions found.</div>`;
             }
+        }
+    }
+
+    function selectSuggestion(word, isDictionarySection) {
+        if (isDictionarySection) {
+            document.getElementById('searchInput').value = word;
+            searchWord(word);
+            const suggestionsUl = document.getElementById('suggestions');
+            suggestionsUl.classList.remove('visible');
+            suggestionsUl.classList.add('hidden');
+        } else {
+            // Show dictionary results in popup-content
+            const popupContent = document.getElementById('popup-content');
+            searchWord(word, popupContent);
+        }
+    }
+
+    function debounce(func, wait) {
+        return function(...args) {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => func.apply(this, args), wait);
         };
-        reader.readAsText(file);
-    }
-}
-
-async function processOCR(files) {
-    const ocrEnglish = document.getElementById('ocr-english').checked;
-    const ocrHindi = document.getElementById('ocr-hindi').checked;
-    const ocrOdia = document.getElementById('ocr-odia').checked;
-    let langs = [];
-    if (ocrEnglish) langs.push('eng');
-    if (ocrHindi) langs.push('hin');
-    if (ocrOdia) langs.push('ori');
-    if (langs.length === 0) {
-        alert('Please select at least one OCR language.');
-        return;
-    }
-    const langString = langs.join('+');
-    const odiaCharset = 'ଅଆଇଈଉଊଋଌଏଐଓଔକଖଗଘଙଚଛଜଝଞଟଠଡଢଣତଥଦଧନପଫବଭମଯରଲଳଵଶଷସହ଼ାିୀୁୂୃୄେୈୋୌ୍ୟୱ';
-
-    function preprocessCanvas(canvas) {
-        const context = canvas.getContext('2d', { alpha: false });
-        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imageData.data;
-
-        // Convert to grayscale
-        for (let i = 0; i < data.length; i += 4) {
-            const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-            data[i] = data[i + 1] = data[i + 2] = avg;
-        }
-
-        // Adaptive thresholding
-        const threshold = 150; // Adjusted for better contrast
-        for (let i = 0; i < data.length; i += 4) {
-            const brightness = data[i];
-            const value = brightness > threshold ? 255 : 0;
-            data[i] = data[i + 1] = data[i + 2] = value;
-        }
-
-        // Noise reduction (simple 3x3 median filter)
-        const width = canvas.width;
-        const height = canvas.height;
-        const tempData = context.getImageData(0, 0, width, height);
-        for (let y = 1; y < height - 1; y++) {
-            for (let x = 1; x < width - 1; x++) {
-                const pixels = [];
-                for (let dy = -1; dy <= 1; dy++) {
-                    for (let dx = -1; dx <= 1; dx++) {
-                        const i = ((y + dy) * width + (x + dx)) * 4;
-                        pixels.push(data[i]);
-                    }
-                }
-                pixels.sort((a, b) => a - b);
-                const median = pixels[4];
-                const i = (y * width + x) * 4;
-                tempData.data[i] = tempData.data[i + 1] = tempData.data[i + 2] = median;
-            }
-        }
-
-        context.putImageData(tempData, 0, 0);
-        return canvas;
     }
 
-    try {
-        showProgress('Processing OCR', 0);
-        textPages = [];
+    function loadTextFile(files) {
+        let fullText = '';
         const totalFiles = files.length;
         let processedFiles = 0;
 
-        const processFile = async (file, index) => {
-            return new Promise((resolve, reject) => {
-                const fileKey = `${file.name}_${file.lastModified}_${file.size}`;
-                if (file.name.endsWith('.pdf')) {
-                    const reader = new FileReader();
-                    reader.onload = async function(e) {
-                        try {
-                            const typedarray = new Uint8Array(e.target.result);
-                            const pdf = await pdfjsLib.getDocument(typedarray).promise;
-                            const totalPages = pdf.numPages;
-
-                            for (let pageIndex = 1; pageIndex <= totalPages; pageIndex++) {
-                                const page = await pdf.getPage(pageIndex);
-                                const viewport = page.getViewport({ scale: 2.0 }); // Optimized scale
-                                const canvas = document.createElement('canvas');
-                                const context = canvas.getContext('2d', { alpha: false });
-                                canvas.height = viewport.height;
-                                canvas.width = viewport.width;
-                                await page.render({
-                                    canvasContext: context,
-                                    viewport: viewport,
-                                    renderInteractiveForms: false
-                                }).promise;
-                                preprocessCanvas(canvas);
-                                const pageKey = `${fileKey}_page${pageIndex}`;
-                                let pageText = ocrFileCache.get(pageKey);
-                                if (!pageText) {
-                                    const { data } = await Tesseract.recognize(canvas, langString, {
-                                        logger: m => {
-                                            if (m.status === 'recognizing text') {
-                                                const progress = Math.round((processedFiles + (pageIndex / totalPages) * (1 / totalFiles)) * 100);
-                                                showProgress(`Processing OCR (File ${index + 1}/${totalFiles}, Page ${pageIndex}/${totalPages})`, progress);
-                                            }
-                                        },
-                                        workerPath: './js/worker.min.js',
-                                    corePath: './js/tesseract-core.wasm.js',
-                                    langPath: './lang-data/',
-                                        tessedit_ocr_engine_mode: 1, // LSTM engine
-                                        tessedit_pageseg_mode: 3, // Fully automatic page segmentation
-                                        tessedit_dpi: 300, // High resolution for accuracy
-                                        tessedit_char_whitelist: odiaCharset,
-                                        tessedit_min_confidence: 85, // Higher confidence threshold
-                                        preserve_interword_spaces: 1,
-                                        tessedit_create_hocr: 0,
-                                        tessedit_create_tsv: 0,
-                                        tessedit_create_box: 0,
-                                        tessedit_create_unlv: 0,
-                                        tessedit_create_osd: 0
-                                    });
-                                    pageText = data.words
-                                        .filter(word => word.confidence > 85)
-                                        .map(word => word.text)
-                                        .join(' ')
-                                        .replace(/\s+/g, ' ')
-                                        .trim();
-                                    ocrFileCache.set(pageKey, pageText);
-                                }
-                                textPages.push(pageText);
-                                canvas.width = 0;
-                                canvas.height = 0;
-                            }
-                            pdf.destroy();
-                            resolve();
-                        } catch (error) {
-                            reject(error);
-                        }
-                    };
-                    reader.readAsArrayBuffer(file);
-                } else {
-                    const reader = new FileReader();
-                    reader.onload = async function(e) {
-                        try {
-                            const img = new Image();
-                            img.src = e.target.result;
-                            await new Promise(resolve => img.onload = resolve);
-                            const canvas = document.createElement('canvas');
-                            const scale = Math.min(3000 / img.width, 3000 / img.height, 1); // Limit size for performance
-                            canvas.width = img.width * scale;
-                            canvas.height = img.height * scale;
-                            const context = canvas.getContext('2d', { alpha: false });
-                            context.drawImage(img, 0, 0, canvas.width, canvas.height);
-                            preprocessCanvas(canvas);
-                            let imageText = ocrFileCache.get(fileKey);
-                            if (!imageText) {
-                                const { data } = await Tesseract.recognize(canvas, langString, {
-                                    logger: m => {
-                                        if (m.status === 'recognizing text') {
-                                            const progress = Math.round((processedFiles + m.progress / totalFiles) * 100);
-                                            showProgress(`Processing OCR (File ${index + 1}/${totalFiles})`, progress);
-                                        }
-                                    },
-                                    workerPath: './js/worker.min.js',
-                                    corePath: './js/tesseract-core.wasm.js',
-                                    langPath: './lang-data/',
-                                        tessedit_ocr_engine_mode: 1, // LSTM engine
-                                    tessedit_pageseg_mode: 6, // Single block of text
-                                    tessedit_dpi: 300,
-                                    tessedit_char_whitelist: odiaCharset,
-                                    tessedit_min_confidence: 85,
-                                    preserve_interword_spaces: 1,
-                                    tessedit_create_hocr: 0,
-                                    tessedit_create_tsv: 0,
-                                    tessedit_create_box: 0,
-                                    tessedit_create_unlv: 0,
-                                    tessedit_create_osd: 0
-                                });
-                                imageText = data.words
-                                    .filter(word => word.confidence > 85)
-                                    .map(word => word.text)
-                                    .join(' ')
-                                    .replace(/\s+/g, ' ')
-                                    .trim();
-                                ocrFileCache.set(fileKey, imageText);
-                            }
-                            textPages.push(imageText);
-                            resolve();
-                        } catch (error) {
-                            reject(error);
-                        }
-                    };
-                    reader.readAsDataURL(file);
+        for (const file of files) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                let content = e.target.result;
+                if (file.name.endsWith('.html')) {
+                    const div = document.createElement('div');
+                    div.innerHTML = content;
+                    content = div.textContent;
                 }
-            });
-        };
-
-        for (let i = 0; i < files.length; i++) {
-            await processFile(files[i], i);
-            processedFiles++;
-        }
-
-        currentPageIndex = 0;
-        renderTextPage();
-        document.getElementById('dictionary-section').classList.add('hidden');
-        document.getElementById('reader-section').classList.add('visible');
-        document.getElementById('text-content').style.display = 'block';
-        hideProgress();
-    } catch (error) {
-        console.error('Error processing OCR:', error);
-        document.getElementById('text-content').innerHTML = 'Error processing OCR.';
-        hideProgress();
-    }
-}
-
-function renderTextPage() {
-    if (textPages.length === 0) {
-        document.getElementById('text-content').innerHTML = 'No text to display.';
-        document.getElementById('pagination').innerHTML = '';
-        return;
-    }
-    const textContentDiv = document.getElementById('text-content');
-    const currentText = textPages[currentPageIndex];
-    sentences = currentText.split(/\r?\n/).filter(line => line.trim() !== '');
-    textContentDiv.innerHTML = sentences.map((line, index) => 
-        `<span data-sentence-index="${index}">${line.trim()}</span>`
-    ).join('<br>');
-    textContentDiv.style.display = 'block';
-    currentSentenceIndex = -1;
-    updatePagination();
-}
-
-
-function updatePagination() {
-    const paginationDiv = document.getElementById('pagination');
-    paginationDiv.innerHTML = '';
-}
-
-function changePage(index) {
-    // No-op since pagination is removed
-}
-
-function loadPDF(files) {
-    let fullText = '';
-    const totalFiles = files.length;
-    let processedFiles = 0;
-
-    for (const file of files) {
-        const reader = new FileReader();
-        reader.onload = async function(e) {
-            try {
-                const typedarray = new Uint8Array(e.target.result);
-                pdfDoc = await pdfjsLib.getDocument(typedarray).promise;
-                let pdfText = '';
-                for (let i = 1; i <= pdfDoc.numPages; i++) {
-                    const page = await pdfDoc.getPage(i);
-                    const textContent = await page.getTextContent();
-                    const pageText = textContent.items.map(item => item.str).join(' ');
-                    pdfText += pageText + '\n\n';
-                    showProgress(`Processing PDF (File ${processedFiles + 1}/${totalFiles}, Page ${i}/${pdfDoc.numPages})`, 
-                        Math.round((processedFiles + i / pdfDoc.numPages) / totalFiles * 100));
-                }
-                fullText += pdfText;
+                fullText += content + '\n\n';
                 processedFiles++;
+                showProgress('Processing text file', Math.round((processedFiles / totalFiles) * 100));
+
                 if (processedFiles === totalFiles) {
                     textPages = [fullText];
                     currentPageIndex = 0;
@@ -1515,523 +1209,782 @@ function loadPDF(files) {
                     document.getElementById('reader-section').classList.add('visible');
                     document.getElementById('text-content').style.display = 'block';
                     hideProgress();
-                    pdfDoc.destroy();
                 }
-            } catch (error) {
-                console.error('Error processing PDF:', error);
-                document.getElementById('text-content').innerHTML = 'Error processing PDF.';
-                hideProgress();
-            }
-        };
-        reader.readAsArrayBuffer(file);
-    }
-}
-
-function showPopup(word) {
-    const popup = document.getElementById('popup');
-    const popupContent = document.getElementById('popup-content');
-    popupContent.innerHTML = '';
-    popup.style.display = 'block';
-    setTimeout(() => {
-        popup.classList.add('visible');
-        searchWord(word, popupContent);
-    }, 0);
-}
-
-function populateVoiceList() {
-    if (!isSpeechSupported) return;
-    voices = window.speechSynthesis.getVoices();
-    defaultEnglishVoice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Google')) || voices.find(v => v.lang.startsWith('en'));
-    defaultHindiVoice = voices.find(v => v.lang.startsWith('hi') && v.name.includes('Google')) || voices.find(v => v.lang.startsWith('hi'));
-    defaultOdiaVoice = voices.find(v => v.lang.startsWith('or') && v.name.includes('Google')) || voices.find(v => v.lang.startsWith('or'));
-    const voiceSelect = document.getElementById('voiceSelect');
-    const readerVoiceSelect1 = document.getElementById('reader-voice-select-1');
-    const readerVoiceSelect2 = document.getElementById('reader-voice-select-2');
-    const readerVoiceSelect3 = document.getElementById('reader-voice-select-3');
-    const popupVoiceSelect1 = document.getElementById('popup-voice-select-1');
-    const popupVoiceSelect2 = document.getElementById('popup-voice-select-2');
-    const popupVoiceSelect3 = document.getElementById('popup-voice-select-3');
-
-    [voiceSelect, readerVoiceSelect1, readerVoiceSelect2, readerVoiceSelect3, popupVoiceSelect1, popupVoiceSelect2, popupVoiceSelect3].forEach(select => {
-        select.innerHTML = '<option value="">🔊 Select a voice</option>';
-        voices.forEach((voice, index) => {
-            const lang = voice.lang.startsWith('or') ? 'Odia' : voice.lang.startsWith('hi') ? 'Hindi' : voice.lang.startsWith('en') ? 'English' : 'Other';
-            const option = document.createElement('option');
-            option.value = index;
-            option.textContent = `🔊 ${voice.name} (${lang})`;
-            select.appendChild(option);
-        });
-        const defaultVoiceIndex = voices.findIndex(v => v.name.includes('Google') && v.lang.includes('en-US')) || 0;
-        if (defaultVoiceIndex >= 0) {
-            select.value = defaultVoiceIndex;
+            };
+            reader.readAsText(file);
         }
-    });
-}
-
-function speakPopup() {
-    if (!isSpeechSupported) return;
-    const text = document.getElementById('popup-speak').getAttribute('data-word');
-    if (!text) {
-        alert("No text available.");
-        return;
     }
-    stopSpeech();
-    const voiceMap = {
-        'en': defaultEnglishVoice,
-        'hi': defaultHindiVoice,
-        'or': defaultOdiaVoice
-    };
-    speechUtterances = [];
-    activeUtterances = 0;
-    ['en', 'hi', 'or'].forEach(langPrefix => {
-        const filteredText = filterTextByLanguage(text, langPrefix);
-        if (filteredText) {
-            const voice = voiceMap[langPrefix];
-            if (voice) {
-                const utterance = new SpeechSynthesisUtterance(filteredText);
-                utterance.voice = voice;
-                utterance.lang = voice.lang;
-                utterance.rate = 0.8;
-                utterance.pitch = 1.0;
-                utterance.onend = () => {
-                    activeUtterances--;
-                    if (activeUtterances === 0) {
-                        document.getElementById('popup-speak').disabled = false;
-                        document.getElementById('popup-stop').disabled = true;
-                        document.getElementById('popup').classList.remove('visible');
-                        document.getElementById('popup').style.display = 'none';
-                    }
-                };
-                speechUtterances.push(utterance);
-                activeUtterances++;
-            }
+
+    async function processOCR(files) {
+        const ocrEnglish = document.getElementById('ocr-english').checked;
+        const ocrHindi = document.getElementById('ocr-hindi').checked;
+        const ocrOdia = document.getElementById('ocr-odia').checked;
+        let langs = [];
+        if (ocrEnglish) langs.push('eng');
+        if (ocrHindi) langs.push('hin');
+        if (ocrOdia) langs.push('ori');
+        if (langs.length === 0) {
+            alert('Please select at least one OCR language.');
+            return;
         }
-    });
-    if (activeUtterances > 0) {
-        speechUtterances.forEach(utterance => window.speechSynthesis.speak(utterance));
-        document.getElementById('popup-speak').disabled = true;
-        document.getElementById('popup-stop').disabled = false;
-    } else {
-        document.getElementById('popup-speak').disabled = false;
-        document.getElementById('popup-stop').disabled = true;
-        document.getElementById('popup').classList.remove('visible');
-        document.getElementById('popup').style.display = 'none';
-    }
-}
+        const langString = langs.join('+');
+        const odiaCharset = 'ଅଆଇଈଉଊଋଌଏଐଓଔକଖଗଘଙଚଛଜଝଞଟଠଡଢଣତଥଦଧନପଫବଭମଯରଲଳଵଶଷସହ଼ାିୀୁୂୃୄେୈୋୌ୍ୟୱ';
 
-function playSpeech() {
-    if (!isSpeechSupported) return;
-    if (!sentences.length) {
-        document.getElementById('processing-status').textContent = 'No text to read';
-        return;
-    }
-    if (isReadingAloud && isPaused) {
-        window.speechSynthesis.resume();
-        isPaused = false;
-        document.getElementById('play-btn').textContent = '⏸️';
-        document.getElementById('processing-status').textContent = 'Resuming reading...';
-        return;
-    } else if (isReadingAloud) {
-        window.speechSynthesis.pause();
-        isPaused = true;
-        document.getElementById('play-btn').textContent = '▶️';
-        document.getElementById('processing-status').textContent = 'Paused reading';
-        return;
-    }
+        function preprocessCanvas(canvas) {
+            const context = canvas.getContext('2d', { alpha: false });
+            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
 
-    stopSpeech();
-    isReadingAloud = true;
-    isPaused = false;
-    currentSentenceIndex = currentSentenceIndex >= sentences.length - 1 ? 0 : currentSentenceIndex + 1;
-    document.getElementById('play-btn').textContent = '⏸️';
-    document.getElementById('processing-status').textContent = 'Reading...';
-    readNextSentence();
-}
+            // Convert to grayscale
+            for (let i = 0; i < data.length; i += 4) {
+                const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                data[i] = data[i + 1] = data[i + 2] = avg;
+            }
 
-function readNextSentence() {
-    if (!isSpeechSupported) return;
-    if (currentSentenceIndex >= sentences.length || !isReadingAloud) {
-        stopSpeech();
-        return;
-    }
-    const sentenceSpans = document.getElementById('text-content').querySelectorAll('span');
-    sentenceSpans.forEach(span => span.classList.remove('highlight'));
-    if (sentenceSpans[currentSentenceIndex]) {
-        sentenceSpans[currentSentenceIndex].classList.add('highlight');
-        const textContentDiv = document.getElementById('text-content');
-        const currentSpan = sentenceSpans[currentSentenceIndex];
-        const spanRect = currentSpan.getBoundingClientRect();
-        const containerRect = textContentDiv.getBoundingClientRect();
-        textContentDiv.scrollTop += spanRect.top - containerRect.top - (containerRect.height / 2) + (spanRect.height / 2);
-    }
-    const text = sentences[currentSentenceIndex];
-    const voiceMap = {
-        'en': defaultEnglishVoice,
-        'hi': defaultHindiVoice,
-        'or': defaultOdiaVoice
-    };
-    speechUtterances = [];
-    activeUtterances = 0;
-    let usedVoicesCount = 0;
-    ['en', 'hi', 'or'].forEach(langPrefix => {
-        const filteredText = filterTextByLanguage(text, langPrefix);
-        if (filteredText) {
-            const voice = voiceMap[langPrefix];
-            if (voice) {
-                const utterance = new SpeechSynthesisUtterance(filteredText);
-                utterance.voice = voice;
-                utterance.lang = voice.lang;
-                utterance.rate = 0.8;
-                utterance.pitch = 1.0;
-                utterance.onend = () => {
-                    activeUtterances--;
-                    if (activeUtterances === 0 && isReadingAloud) {
-                        if (currentSentenceIndex < sentences.length - 1) {
-                            currentSentenceIndex++;
-                            readNextSentence();
-                        } else {
-                            stopSpeech();
-                            document.getElementById('processing-status').textContent = 'Finished reading page';
+            // Adaptive thresholding
+            const threshold = 150;
+            for (let i = 0; i < data.length; i += 4) {
+                const brightness = data[i];
+                const value = brightness > threshold ? 255 : 0;
+                data[i] = data[i + 1] = data[i + 2] = value;
+            }
+
+            // Noise reduction (simple 3x3 median filter)
+            const width = canvas.width;
+            const height = canvas.height;
+            const tempData = context.getImageData(0, 0, width, height);
+            for (let y = 1; y < height - 1; y++) {
+                for (let x = 1; x < width - 1; x++) {
+                    const pixels = [];
+                    for (let dy = -1; dy <= 1; dy++) {
+                        for (let dx = -1; dx <= 1; dx++) {
+                            const i = ((y + dy) * width + (x + dx)) * 4;
+                            pixels.push(data[i]);
                         }
                     }
-                };
-                speechUtterances.push(utterance);
-                activeUtterances++;
-                usedVoicesCount++;
+                    pixels.sort((a, b) => a - b);
+                    const median = pixels[4];
+                    const i = (y * width + x) * 4;
+                    tempData.data[i] = tempData.data[i + 1] = tempData.data[i + 2] = median;
+                }
             }
+
+            context.putImageData(tempData, 0, 0);
+            return canvas;
         }
-    });
-    if (activeUtterances > 0) {
-        speechUtterances.forEach(utterance => window.speechSynthesis.speak(utterance));
-        document.getElementById('play-btn').disabled = false;
-        document.getElementById('stop-btn').disabled = false;
-        document.getElementById('processing-status').textContent = `Reading with ${usedVoicesCount} voice${usedVoicesCount > 1 ? 's' : ''}...`;
-    } else {
-        stopSpeech();
-        document.getElementById('processing-status').textContent = 'No text available for reading';
+
+        try {
+            showProgress('Processing OCR', 0);
+            textPages = [];
+            const totalFiles = files.length;
+            let processedFiles = 0;
+
+            const processFile = async (file, index) => {
+                return new Promise((resolve, reject) => {
+                    const fileKey = `${file.name}_${file.lastModified}_${file.size}`;
+                    if (file.name.endsWith('.pdf')) {
+                        const reader = new FileReader();
+                        reader.onload = async function(e) {
+                            try {
+                                const typedarray = new Uint8Array(e.target.result);
+                                const pdf = await pdfjsLib.getDocument(typedarray).promise;
+                                const totalPages = pdf.numPages;
+
+                                for (let pageIndex = 1; pageIndex <= totalPages; pageIndex++) {
+                                    const page = await pdf.getPage(pageIndex);
+                                    const viewport = page.getViewport({ scale: 2.0 });
+                                    const canvas = document.createElement('canvas');
+                                    const context = canvas.getContext('2d', { alpha: false });
+                                    canvas.height = viewport.height;
+                                    canvas.width = viewport.width;
+                                    await page.render({
+                                        canvasContext: context,
+                                        viewport: viewport,
+                                        renderInteractiveForms: false
+                                    }).promise;
+                                    preprocessCanvas(canvas);
+                                    const pageKey = `${fileKey}_page${pageIndex}`;
+                                    let pageText = ocrFileCache.get(pageKey);
+                                    if (!pageText) {
+                                        const { data } = await Tesseract.recognize(canvas, langString, {
+                                            logger: m => {
+                                                if (m.status === 'recognizing text') {
+                                                    const progress = Math.round((processedFiles + (pageIndex / totalPages) * (1 / totalFiles)) * 100);
+                                                    showProgress(`Processing OCR (File ${index + 1}/${totalFiles}, Page ${pageIndex}/${totalPages})`, progress);
+                                                }
+                                            },
+                                            workerPath: './js/worker.min.js',
+                                            corePath: './js/tesseract-core.wasm.js',
+                                            langPath: './lang-data/',
+                                            tessedit_pageseg_mode: 3,
+                                            tessedit_dpi: 300,
+                                            tessedit_char_whitelist: odiaCharset,
+                                            tessedit_min_confidence: 85,
+                                            preserve_interword_spaces: 1,
+                                            tessedit_create_hocr: 0,
+                                            tessedit_create_tsv: 0,
+                                            tessedit_create_box: 0,
+                                            tessedit_create_unlv: 0,
+                                            tessedit_create_osd: 0
+                                        });
+                                        pageText = data.words
+    .filter(word => word.confidence > 85)
+    .map(word => word.text)
+    .join(' ')
+    .replace(/[ \t]+/g, ' ') // Replace multiple spaces or tabs with a single space
+    .replace(/\n+/g, '\n')   // Preserve single newlines for paragraphs
+    .trim();
+                                        ocrFileCache.set(pageKey, pageText);
+                                    }
+                                    textPages.push(pageText);
+                                    canvas.width = 0;
+                                    canvas.height = 0;
+                                }
+                                pdf.destroy();
+                                resolve();
+                            } catch (error) {
+                                reject(error);
+                            }
+                        };
+                        reader.readAsArrayBuffer(file);
+                    } else {
+                        const reader = new FileReader();
+                        reader.onload = async function(e) {
+                            try {
+                                const img = new Image();
+                                img.src = e.target.result;
+                                await new Promise(resolve => img.onload = resolve);
+                                const canvas = document.createElement('canvas');
+                                const scale = Math.min(3000 / img.width, 3000 / img.height, 1);
+                                canvas.width = img.width * scale;
+                                canvas.height = img.height * scale;
+                                const context = canvas.getContext('2d', { alpha: false });
+                                context.drawImage(img, 0, 0, canvas.width, canvas.height);
+                                preprocessCanvas(canvas);
+                                let imageText = ocrFileCache.get(fileKey);
+                                if (!imageText) {
+                                    const { data } = await Tesseract.recognize(canvas, langString, {
+                                        logger: m => {
+                                            if (m.status === 'recognizing text') {
+                                                const progress = Math.round((processedFiles + m.progress / totalFiles) * 100);
+                                                showProgress(`Processing OCR (File ${index + 1}/${totalFiles})`, progress);
+                                            }
+                                        },
+                                        workerPath: './js/worker.min.js',
+                                        corePath: './js/tesseract-core.wasm.js',
+                                        langPath: './lang-data/',
+                                        tessedit_pageseg_mode: 6,
+                                        tessedit_dpi: 300,
+                                        tessedit_char_whitelist: odiaCharset,
+                                        tessedit_min_confidence: 85,
+                                        preserve_interword_spaces: 1,
+                                        tessedit_create_hocr: 0,
+                                        tessedit_create_tsv: 0,
+                                        tessedit_create_box: 0,
+                                        tessedit_create_unlv: 0,
+                                        tessedit_create_osd: 0
+                                    });
+imageText = data.words
+    .filter(word => word.confidence > 85)
+    .map(word => word.text)
+    .join(' ')
+    .replace(/[ \t]+/g, ' ') // Replace multiple spaces or tabs with a single space
+    .replace(/\n+/g, '\n')   // Preserve single newlines for paragraphs
+    .trim();
+                                    ocrFileCache.set(fileKey, imageText);
+                                }
+                                textPages.push(imageText);
+                                resolve();
+                            } catch (error) {
+                                reject(error);
+                            }
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                });
+            };
+
+            for (let i = 0; i < files.length; i++) {
+                await processFile(files[i], i);
+                processedFiles++;
+            }
+
+            currentPageIndex = 0;
+            renderTextPage();
+            document.getElementById('dictionary-section').classList.add('hidden');
+            document.getElementById('reader-section').classList.add('visible');
+            document.getElementById('text-content').style.display = 'block';
+            hideProgress();
+        } catch (error) {
+            console.error('Error processing OCR:', error);
+            document.getElementById('text-content').innerHTML = 'Error processing OCR.';
+            hideProgress();
+        }
     }
-}
 
-function stopSpeech() {
-    if (!isSpeechSupported) return;
-    window.speechSynthesis.cancel();
-    speechUtterances = [];
-    activeUtterances = 0;
-    isReadingAloud = false;
-    isPaused = false;
-    document.getElementById('play-btn').textContent = '🗣️';
-    document.getElementById('play-btn').disabled = false;
-    document.getElementById('stop-btn').disabled = true;
-    document.getElementById('result-speak').disabled = resultText ? false : true;
-    document.getElementById('result-stop').disabled = true;
-    document.getElementById('popup-speak').disabled = false;
-    document.getElementById('popup-stop').disabled = true;
-    const sentenceSpans = document.getElementById('text-content').querySelectorAll('span');
-    sentenceSpans.forEach(span => {
-        span.classList.remove('highlight');
-        span.style.display = 'inline';
-    });
-    document.getElementById('processing-status').textContent = '';
-}
+    function renderTextPage() {
+        if (textPages.length === 0) {
+            document.getElementById('text-content').innerHTML = 'No text to display.';
+            document.getElementById('pagination').innerHTML = '';
+            return;
+        }
+        const textContentDiv = document.getElementById('text-content');
+        const currentText = textPages[currentPageIndex];
+        sentences = currentText.split(/\r?\n/).filter(line => line.trim() !== '');
+        textContentDiv.innerHTML = sentences.map((line, index) => 
+            `<span data-sentence-index="${index}">${line.trim()}</span>`
+        ).join('<br>');
+        textContentDiv.style.display = 'block';
+        currentSentenceIndex = -1;
+        updatePagination();
+    }
 
-function exportText() {
-    if (textPages.length === 0) return;
-    const text = textPages.join('\n\n');
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'exported_text.txt';
-    a.click();
-    URL.revokeObjectURL(url);
-}
+    function updatePagination() {
+        const paginationDiv = document.getElementById('pagination');
+        paginationDiv.innerHTML = '';
+    }
 
-function handleCopy(event) {
-    const selection = window.getSelection();
-    const selectedText = selection.toString().trim();
-    if (selectedText && document.getElementById('reader-section').classList.contains('visible')) {
-        event.preventDefault();
-        navigator.clipboard.writeText(selectedText).then(() => {
-            showPopup(selectedText);
+    function changePage(index) {
+        // No-op since pagination is removed
+    }
+
+    function loadPDF(files) {
+        let fullText = '';
+        const totalFiles = files.length;
+        let processedFiles = 0;
+
+        for (const file of files) {
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const typedarray = new Uint8Array(e.target.result);
+                    pdfDoc = await pdfjsLib.getDocument(typedarray).promise;
+                    let pdfText = '';
+                    for (let i = 1; i <= pdfDoc.numPages; i++) {
+                        const page = await pdfDoc.getPage(i);
+                        const textContent = await page.getTextContent();
+                        const pageText = textContent.items.map(item => item.str).join(' ');
+                        pdfText += pageText + '\n\n';
+                        showProgress(`Processing PDF (File ${processedFiles + 1}/${totalFiles}, Page ${i}/${pdfDoc.numPages})`, 
+                            Math.round((processedFiles + i / pdfDoc.numPages) / totalFiles * 100));
+                    }
+                    fullText += pdfText;
+                    processedFiles++;
+                    if (processedFiles === totalFiles) {
+                        textPages = [fullText];
+                        currentPageIndex = 0;
+                        renderTextPage();
+                        document.getElementById('dictionary-section').classList.add('hidden');
+                        document.getElementById('reader-section').classList.add('visible');
+                        document.getElementById('text-content').style.display = 'block';
+                        hideProgress();
+                        pdfDoc.destroy();
+                    }
+                } catch (error) {
+                    console.error('Error processing PDF:', error);
+                    document.getElementById('text-content').innerHTML = 'Error processing PDF.';
+                    hideProgress();
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+    }
+
+    function showPopup(word) {
+        const popup = document.getElementById('popup');
+        const popupContent = document.getElementById('popup-content');
+        popupContent.innerHTML = '';
+        popup.style.display = 'block';
+        setTimeout(() => {
+            popup.classList.add('visible');
+            loadSuggestions(word, popupContent);
+        }, 0);
+    }
+
+    function populateVoiceList() {
+        if (!isTTSSupported) {
+            document.getElementById('voiceSelect').disabled = true;
+            document.getElementById('reader-voice-select-1').disabled = true;
+            document.getElementById('reader-voice-select-2').disabled = true;
+            document.getElementById('reader-voice-select-3').disabled = true;
+            document.getElementById('popup-voice-select-1').disabled = true;
+            document.getElementById('popup-voice-select-2').disabled = true;
+            document.getElementById('popup-voice-select-3').disabled = true;
+            document.getElementById('result-speak').disabled = true;
+            document.getElementById('result-stop').disabled = true;
+            document.getElementById('popup-speak').disabled = true;
+            document.getElementById('popup-stop').disabled = true;
+            document.getElementById('play-btn').disabled = true;
+            document.getElementById('stop-btn').disabled = true;
+            return;
+        }
+        voices = window.speechSynthesis.getVoices();
+        defaultEnglishVoice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Google')) || voices.find(v => v.lang.startsWith('en'));
+        defaultHindiVoice = voices.find(v => v.lang.startsWith('hi') && v.name.includes('Google')) || voices.find(v => v.lang.startsWith('hi'));
+        defaultOdiaVoice = voices.find(v => v.lang.startsWith('or') && v.name.includes('Google')) || voices.find(v => v.lang.startsWith('or'));
+        const voiceSelect = document.getElementById('voiceSelect');
+        const readerVoiceSelect1 = document.getElementById('reader-voice-select-1');
+        const readerVoiceSelect2 = document.getElementById('reader-voice-select-2');
+        const readerVoiceSelect3 = document.getElementById('reader-voice-select-3');
+        const popupVoiceSelect1 = document.getElementById('popup-voice-select-1');
+        const popupVoiceSelect2 = document.getElementById('popup-voice-select-2');
+        const popupVoiceSelect3 = document.getElementById('popup-voice-select-3');
+
+        [voiceSelect, readerVoiceSelect1, readerVoiceSelect2, readerVoiceSelect3, popupVoiceSelect1, popupVoiceSelect2, popupVoiceSelect3].forEach(select => {
+            select.innerHTML = '<option value="">🔊 Select a voice</option>';
+            voices.forEach((voice, index) => {
+                const lang = voice.lang.startsWith('or') ? 'Odia' : voice.lang.startsWith('hi') ? 'Hindi' : voice.lang.startsWith('en') ? 'English' : 'Other';
+                const option = document.createElement('option');
+                option.value = index;
+                option.textContent = `🔊 ${voice.name} (${lang})`;
+                select.appendChild(option);
+            });
+            const defaultVoiceIndex = voices.findIndex(v => v.name.includes('Google') && v.lang.includes('en-US')) || 0;
+            if (defaultVoiceIndex >= 0) {
+                select.value = defaultVoiceIndex;
+            }
         });
     }
-}
 
-function handleDoubleTap(event) {
-    if (!document.getElementById('reader-section').classList.contains('visible')) return;
-
-    const textContentDiv = document.getElementById('text-content');
-    const touch = event.changedTouches[0];
-    const range = document.caretRangeFromPoint(touch.clientX, touch.clientY);
-
-    if (!range) return;
-
-    range.expand('word');
-    const selectedText = range.toString().trim();
-
-    if (selectedText) {
-        showPopup(selectedText);
-    }
-}
-
-let lastTapTime = 0;
-const doubleTapDelay = 300;
-
-function setupDoubleTapListener() {
-    const textContentDiv = document.getElementById('text-content');
-    textContentDiv.addEventListener('touchend', (event) => {
-        const currentTime = new Date().getTime();
-        const tapInterval = currentTime - lastTapTime;
-
-        if (tapInterval < doubleTapDelay && tapInterval > 0) {
-            event.preventDefault();
-            handleDoubleTap(event);
+    function speakPopup() {
+        if (!isTTSSupported) {
+            alert("Text-to-speech is not supported in this browser.");
+            return;
         }
-        lastTapTime = currentTime;
-    });
-}
+        const text = document.getElementById('popup-speak').getAttribute('data-word');
+        if (!text) {
+            alert("No text available.");
+            return;
+        }
+        stopSpeech();
+        const voiceMap = {
+            'or': defaultOdiaVoice,
+            'hi': defaultHindiVoice,
+            'en': defaultEnglishVoice
+        };
+        speechUtterances = [];
+        activeUtterances = 0;
+        ['or', 'hi', 'en'].forEach(langPrefix => {
+            const filteredText = filterTextByLanguage(text, langPrefix);
+            if (filteredText) {
+                const voice = voiceMap[langPrefix];
+                if (voice) {
+                    const utterance = new SpeechSynthesisUtterance(filteredText);
+                    utterance.voice = voice;
+                    utterance.lang = voice.lang;
+                    utterance.rate = 0.7;
+                    utterance.pitch = 1.0;
+                    utterance.onend = () => {
+                        activeUtterances--;
+                        if (activeUtterances === 0) {
+                            document.getElementById('popup-speak').disabled = false;
+                            document.getElementById('popup-stop').disabled = true;
+                        }
+                    };
+                    speechUtterances.push(utterance);
+                    activeUtterances++;
+                }
+            }
+        });
+        if (activeUtterances > 0) {
+            speechUtterances.forEach(utterance => window.speechSynthesis.speak(utterance));
+            document.getElementById('popup-speak').disabled = true;
+            document.getElementById('popup-stop').disabled = false;
+        } else {
+            document.getElementById('popup-speak').disabled = false;
+            document.getElementById('popup-stop').disabled = true;
+        }
+    }
 
-function clearInputOnClick(event) {
-    event.target.value = '';
-    document.getElementById('results').innerHTML = '';
-    document.getElementById('suggestions').classList.remove('visible');
-    document.getElementById('suggestions').classList.add('hidden');
-    resultText = '';
-    if (isSpeechSupported) {
+    function playSpeech() {
+        if (!isTTSSupported) {
+            document.getElementById('processing-status').textContent = 'Text-to-speech is not supported in this browser.';
+            return;
+        }
+        if (!sentences.length) {
+            document.getElementById('processing-status').textContent = 'No text to read';
+            return;
+        }
+        if (isReadingAloud && isPaused) {
+            window.speechSynthesis.resume();
+            isPaused = false;
+            document.getElementById('play-btn').textContent = '⏸️';
+            document.getElementById('processing-status').textContent = 'Resuming reading...';
+            return;
+        } else if (isReadingAloud) {
+            window.speechSynthesis.pause();
+            isPaused = true;
+            document.getElementById('play-btn').textContent = '▶️';
+            document.getElementById('processing-status').textContent = 'Paused reading';
+            return;
+        }
+
+        stopSpeech();
+        isReadingAloud = true;
+        isPaused = false;
+        currentSentenceIndex = currentSentenceIndex >= sentences.length - 1 ? 0 : currentSentenceIndex + 1;
+        document.getElementById('play-btn').textContent = '⏸️';
+        document.getElementById('processing-status').textContent = 'Reading...';
+        readNextSentence();
+    }
+
+    function readNextSentence() {
+        if (!isTTSSupported) {
+            document.getElementById('processing-status').textContent = 'Text-to-speech is not supported in this browser.';
+            return;
+        }
+        if (currentSentenceIndex >= sentences.length || !isReadingAloud) {
+            stopSpeech();
+            return;
+        }
+        const sentenceSpans = document.getElementById('text-content').querySelectorAll('span');
+        sentenceSpans.forEach(span => span.classList.remove('highlight'));
+        if (sentenceSpans[currentSentenceIndex]) {
+            sentenceSpans[currentSentenceIndex].classList.add('highlight');
+            const textContentDiv = document.getElementById('text-content');
+            const currentSpan = sentenceSpans[currentSentenceIndex];
+            const spanRect = currentSpan.getBoundingClientRect();
+            const containerRect = textContentDiv.getBoundingClientRect();
+            textContentDiv.scrollTop += spanRect.top - containerRect.top - (containerRect.height / 2) + (spanRect.height / 2);
+        }
+        const text = sentences[currentSentenceIndex];
+        const voiceMap = { 
+            'hi': defaultHindiVoice,
+            'or': defaultOdiaVoice,
+            'en': defaultEnglishVoice
+        };
+        speechUtterances = [];
+        activeUtterances = 0;
+        let usedVoicesCount = 0;
+        ['hi', 'or', 'en'].forEach(langPrefix => {
+            const filteredText = filterTextByLanguage(text, langPrefix);
+            if (filteredText) {
+                const voice = voiceMap[langPrefix];
+                if (voice) {
+                    const utterance = new SpeechSynthesisUtterance(filteredText);
+                    utterance.voice = voice;
+                    utterance.lang = voice.lang;
+                    utterance.rate = 0.7;
+                    utterance.pitch = 1.0;
+                    utterance.onend = () => {
+                        activeUtterances--;
+                        if (activeUtterances === 0 && isReadingAloud) {
+                            if (currentSentenceIndex < sentences.length - 1) {
+                                currentSentenceIndex++;
+                                readNextSentence();
+                            } else {
+                                stopSpeech();
+                                document.getElementById('processing-status').textContent = 'Finished reading page';
+                            }
+                        }
+                    };
+                    speechUtterances.push(utterance);
+                    activeUtterances++;
+                    usedVoicesCount++;
+                }
+            }
+        });
+        if (activeUtterances > 0) {
+            speechUtterances.forEach(utterance => window.speechSynthesis.speak(utterance));
+            document.getElementById('play-btn').disabled = false;
+            document.getElementById('stop-btn').disabled = false;
+            document.getElementById('processing-status').textContent = `Reading with ${usedVoicesCount} voice${usedVoicesCount > 1 ? 's' : ''}...`;
+        } else {
+            stopSpeech();
+            document.getElementById('processing-status').textContent = 'No text available for reading';
+        }
+    }
+
+    function stopSpeech() {
+        if (isTTSSupported) {
+            window.speechSynthesis.cancel();
+        }
+        speechUtterances = [];
+        activeUtterances = 0;
+        isReadingAloud = false;
+        isPaused = false;
+        document.getElementById('play-btn').textContent = '🗣️';
+        document.getElementById('play-btn').disabled = !isTTSSupported;
+        document.getElementById('stop-btn').disabled = true;
+        document.getElementById('result-speak').disabled = resultText ? !isTTSSupported : true;
+        document.getElementById('result-stop').disabled = true;
+        document.getElementById('popup-speak').disabled = !isTTSSupported;
+        document.getElementById('popup-stop').disabled = true;
+        const sentenceSpans = document.getElementById('text-content').querySelectorAll('span');
+        sentenceSpans.forEach(span => {
+            span.classList.remove('highlight');
+            span.style.display = 'inline';
+        });
+        document.getElementById('processing-status').textContent = '';
+    }
+
+    function exportText() {
+        if (textPages.length === 0) return;
+        const text = textPages.join('\n\n');
+        const blob = new Blob([text], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'exported_text.txt';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    function handleCopy(event) {
+        const selection = window.getSelection();
+        const selectedText = selection.toString().trim();
+        if (selectedText && document.getElementById('reader-section').classList.contains('visible')) {
+            event.preventDefault();
+            navigator.clipboard.writeText(selectedText).then(() => {
+                showPopup(selectedText);
+            });
+        }
+    }
+
+    function handleDoubleTap(event) {
+        if (!document.getElementById('reader-section').classList.contains('visible')) return;
+
+        const textContentDiv = document.getElementById('text-content');
+        const touch = event.changedTouches[0];
+        const range = document.caretRangeFromPoint(touch.clientX, touch.clientY);
+
+        if (!range) return;
+
+        range.expand('word');
+        const selectedText = range.toString().trim();
+
+        if (selectedText) {
+            showPopup(selectedText);
+        }
+    }
+
+    let lastTapTime = 0;
+    const doubleTapDelay = 300;
+
+    function setupDoubleTapListener() {
+        const textContentDiv = document.getElementById('text-content');
+        textContentDiv.addEventListener('touchend', (event) => {
+            const currentTime = new Date().getTime();
+            const tapInterval = currentTime - lastTapTime;
+
+            if (tapInterval < doubleTapDelay && tapInterval > 0) {
+                event.preventDefault();
+                handleDoubleTap(event);
+            }
+            lastTapTime = currentTime;
+        });
+    }
+
+    function debounce(func, wait) {
+        return function(...args) {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => func.apply(this, args), wait);
+        };
+    }
+
+    function initializeApp() {
+        // Other initialization code remains unchanged
+        const searchInput = document.getElementById('searchInput');
+        const debouncedSuggestions = debounce((word) => {
+            loadSuggestions(word);
+        }, 500);
+
+        searchInput.addEventListener('input', () => {
+            const word = searchInput.value;
+            const suggestionsUl = document.getElementById('suggestions');
+            suggestionsUl.classList.remove('visible');
+            suggestionsUl.classList.add('hidden');
+            suggestionsUl.innerHTML = '';
+            debouncedSuggestions(word);
+        });
+    }
+
+    function clearInputOnClick(event) {
+        event.target.value = '';
+        document.getElementById('results').innerHTML = '';
+        document.getElementById('results').style.display = 'none';
+        document.getElementById('suggestions').classList.remove('visible');
+        document.getElementById('suggestions').classList.add('hidden');
+        resultText = '';
         document.getElementById('result-speak').disabled = true;
         document.getElementById('result-stop').disabled = true;
+        document.getElementById('edit-dictionary-btn').classList.add('hidden');
+        document.getElementById('edit-dictionary-form').classList.add('hidden');
     }
-    document.getElementById('edit-dictionary-btn').classList.add('hidden');
-    document.getElementById('edit-dictionary-form').classList.add('hidden');
-    const dictionarySection = document.getElementById('dictionary-section');
-    const resultsDiv = document.getElementById('results');
-    const suggestionsUl = document.getElementById('suggestions');
-    const fileUploadDiv = dictionarySection.querySelector('div[style*="display: flex; gap: 10px; margin-bottom: 15px;"]');
-    dictionarySection.insertBefore(suggestionsUl, fileUploadDiv);
-    dictionarySection.insertBefore(resultsDiv, document.getElementById('result-controls'));
-}
 
-function toggleEditText() {
-    const textContentDiv = document.getElementById('text-content');
-    const textEditArea = document.getElementById('text-edit-area');
-    const textEditBtn = document.getElementById('text-edit-btn');
+    function toggleEditText() {
+        const textContentDiv = document.getElementById('text-content');
+        const textEditArea = document.getElementById('text-edit-area');
+        const textEditBtn = document.getElementById('text-edit-btn');
 
-    if (textEditArea.style.display === 'none') {
-        textEditArea.value = textPages[currentPageIndex] || '';
-        textEditArea.style.display = 'block';
-        textContentDiv.style.display = 'none';
-        textEditBtn.textContent = '💾 Save';
-        if (isSpeechSupported) stopSpeech();
-    } else {
-        const newText = textEditArea.value.trim();
-        if (newText) {
-            textPages[currentPageIndex] = newText;
-            renderTextPage();
+        if (textEditArea.style.display === 'none') {
+            textEditArea.value = textPages[currentPageIndex] || '';
+            textEditArea.style.display = 'block';
+            textContentDiv.style.display = 'none';
+            textEditBtn.textContent = '💾 Save';
+            stopSpeech();
         } else {
-            textPages = [];
-            currentPageIndex = 0;
-            textContentDiv.innerHTML = 'No text to display.';
-            textEditArea.value = '';
-        }
-        textEditArea.style.display = 'none';
-        textContentDiv.style.display = 'block';
-        textEditBtn.textContent = '✏️';
-    }
-}
-
-function hideVoiceFeatures() {
-    const voiceElements = [
-        'voiceSelect',
-        'result-speak',
-        'result-stop',
-        'reader-voice-select-1',
-        'reader-voice-select-2',
-        'reader-voice-select-3',
-        'play-btn',
-        'stop-btn',
-        'popup-voice-select-1',
-        'popup-voice-select-2',
-        'popup-voice-select-3',
-        'popup-speak',
-        'popup-stop'
-    ];
-    voiceElements.forEach(id => {
-        const element = document.getElementById(id);
-        if (element) element.style.display = 'none';
-    });
-}
-
-async function initializeApp() {
-    if (!localStorage.getItem('customDictionary')) {
-        localStorage.setItem('customDictionary', JSON.stringify({}));
-    }
-
-    // Register Service Worker inline
-    if ('serviceWorker' in navigator) {
-        try {
-            const blob = new Blob([swCode], { type: 'application/javascript' });
-            const blobURL = URL.createObjectURL(blob);
-            const registration = await navigator.serviceWorker.register(blobURL);
-            console.log('Service Worker registered with scope:', registration.scope);
-            URL.revokeObjectURL(blobURL);
-        } catch (error) {
-            console.error('Service Worker registration failed:', error);
+            const newText = textEditArea.value.trim();
+            if (newText) {
+                textPages[currentPageIndex] = newText;
+                renderTextPage();
+            } else {
+                textPages = [];
+                currentPageIndex = 0;
+                textContentDiv.innerHTML = 'No text to display.';
+                textEditArea.value = '';
+            }
+            textEditArea.style.display = 'none';
+            textContentDiv.style.display = 'block';
+            textEditBtn.textContent = '✏️';
         }
     }
 
-    // Skip cache if already populated
-    if (localStorage.getItem('cachePopulated') !== 'true') {
-        showProgress('Initializing app', 0);
-        await cacheFiles();
-        showProgress('Initializing app', 50);
-    }
-
-    try {
-        await initDatabases();
-    } catch (error) {
-        console.error('Error initializing databases:', error);
-        document.getElementById('results').innerHTML = 'Error loading dictionaries. Please ensure all files are available locally.';
-    } finally {
-        hideProgress();
-    }
-
-    if (isSpeechSupported) {
-        const synth = window.speechSynthesis;
-        populateVoiceList();
-        if (synth.onvoiceschanged !== undefined) {
-            synth.onvoiceschanged = populateVoiceList;
+    async function initializeApp() {
+        if (!localStorage.getItem('customDictionary')) {
+            localStorage.setItem('customDictionary', JSON.stringify({}));
         }
-    } else {
-        hideVoiceFeatures();
-    }
 
-    const searchInput = document.getElementById('searchInput');
-    const fileUpload = document.getElementById('file-upload');
-    const fileUploadReader = document.getElementById('file-upload-reader');
-    const ocrBtn = document.getElementById('ocr-btn');
-    const ocrUpload = document.getElementById('ocr-upload');
-    const closeReader = document.getElementById('close-reader');
-    const popupClose = document.getElementById('popup-close');
-    const popupSpeak = document.getElementById('popup-speak');
-    const popupStop = document.getElementById('popup-stop');
-    const resultSpeak = document.getElementById('result-speak');
-    const resultStop = document.getElementById('result-stop');
-    const playBtn = document.getElementById('play-btn');
-    const stopBtn = document.getElementById('stop-btn');
-    const exportBtn = document.getElementById('export-btn');
-    const editDictionaryBtn = document.getElementById('edit-dictionary-btn');
-    const editDictionaryForm = document.getElementById('edit-dictionary-form');
-    const textEditBtn = document.getElementById('text-edit-btn');
-    const debouncedSearch = debounce((word) => {
-        searchWord(word);
-    }, 700);
-
-    searchInput.addEventListener('input', () => {
-        const word = searchInput.value;
-        debouncedSearch(word);
-    });
-
-    searchInput.addEventListener('click', clearInputOnClick);
-
-    function handleFileUpload(event) {
-        const files = Array.from(event.target.files);
-        if (!files.length) return;
-        if (isSpeechSupported) stopSpeech();
-        const pdfFiles = files.filter(f => f.name.endsWith('.pdf'));
-        const textFiles = files.filter(f => f.name.endsWith('.txt') || f.name.endsWith('.html'));
+        const isCached = localStorage.getItem('cachePopulated') === 'true' && await isCachePopulated();
         
-        if (pdfFiles.length > 0) {
-            loadPDF(pdfFiles);
+        if (!isCached) {
+            showProgress('Initializing app', 0);
+            await cacheFiles();
+            await initDatabases();
+            showProgress('Initializing app', 100);
+            hideProgress();
+        } else {
+            try {
+                await initDatabases();
+            } catch (error) {
+                console.error('Error initializing databases offline:', error);
+                document.getElementById('results').innerHTML = 'Error loading dictionaries offline. Please check your internet connection.';
+            }
         }
-        if (textFiles.length > 0) {
-            loadTextFile(textFiles);
+
+        if (isTTSSupported) {
+            const synth = window.speechSynthesis;
+            populateVoiceList();
+            if (synth.onvoiceschanged !== undefined) {
+                synth.onvoiceschanged = populateVoiceList;
+            }
+        } else {
+            populateVoiceList();
+            console.warn('Text-to-speech is not supported in this browser.');
         }
-    }
 
-    fileUpload.addEventListener('change', handleFileUpload);
-    fileUploadReader.addEventListener('change', handleFileUpload);
+        const searchInput = document.getElementById('searchInput');
+        const fileUpload = document.getElementById('file-upload');
+        const fileUploadReader = document.getElementById('file-upload-reader');
+        const ocrBtn = document.getElementById('ocr-btn');
+        const ocrUpload = document.getElementById('ocr-upload');
+        const closeReader = document.getElementById('close-reader');
+        const popupClose = document.getElementById('popup-close');
+        const popupSpeak = document.getElementById('popup-speak');
+        const popupStop = document.getElementById('popup-stop');
+        const resultSpeak = document.getElementById('result-speak');
+        const resultStop = document.getElementById('result-stop');
+        const playBtn = document.getElementById('play-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const exportBtn = document.getElementById('export-btn');
+        const editDictionaryBtn = document.getElementById('edit-dictionary-btn');
+        const editDictionaryForm = document.getElementById('edit-dictionary-form');
+        const textEditBtn = document.getElementById('text-edit-btn');
+        const debouncedSuggestions = debounce((word) => {
+            loadSuggestions(word);
+        }, 700);
 
-    ocrBtn.addEventListener('click', () => {
-        ocrUpload.click();
-    });
+        searchInput.addEventListener('input', () => {
+            const word = searchInput.value;
+            debouncedSuggestions(word);
+        });
 
-    ocrUpload.addEventListener('change', () => {
-        const files = Array.from(ocrUpload.files);
-        if (!files.length) return;
-        if (isSpeechSupported) stopSpeech();
-        ocrFileCache.clear();
-        processOCR(files);
-    });
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const word = searchInput.value;
+                searchWord(word);
+            }
+        });
 
-    closeReader.addEventListener('click', () => {
-        if (isSpeechSupported) stopSpeech();
-        document.getElementById('reader-section').classList.remove('visible');
-        document.getElementById('dictionary-section').classList.remove('hidden');
-        document.getElementById('text-content').style.display = 'block';
-        document.getElementById('text-edit-area').style.display = 'none';
-        document.getElementById('text-edit-btn').textContent = '✏️';
-        textPages = [];
-        currentPageIndex = 0;
-        sentences = [];
-        currentSentenceIndex = -1;
-    });
+        searchInput.addEventListener('click', clearInputOnClick);
 
-    popupClose.addEventListener('click', () => {
-        if (isSpeechSupported) stopSpeech();
-        document.getElementById('popup').classList.remove('visible');
-        document.getElementById('popup').style.display = 'none';
-    });
+        function handleFileUpload(event) {
+            const files = Array.from(event.target.files);
+            if (!files.length) return;
+            stopSpeech();
+            const pdfFiles = files.filter(f => f.name.endsWith('.pdf'));
+            const textFiles = files.filter(f => f.name.endsWith('.txt') || f.name.endsWith('.html'));
+            
+            if (pdfFiles.length > 0) {
+                loadPDF(pdfFiles);
+            }
+            if (textFiles.length > 0) {
+                loadTextFile(textFiles);
+            }
+        }
 
-    if (isSpeechSupported) {
+        fileUpload.addEventListener('change', handleFileUpload);
+        fileUploadReader.addEventListener('change', handleFileUpload);
+
+        ocrBtn.addEventListener('click', () => {
+            ocrUpload.click();
+        });
+
+        ocrUpload.addEventListener('change', () => {
+            const files = Array.from(ocrUpload.files);
+            if (!files.length) return;
+            stopSpeech();
+            ocrFileCache.clear();
+            processOCR(files);
+        });
+
+        closeReader.addEventListener('click', () => {
+            stopSpeech();
+            document.getElementById('reader-section').classList.remove('visible');
+            document.getElementById('dictionary-section').classList.remove('hidden');
+            document.getElementById('text-content').innerHTML = '';
+            document.getElementById('text-content').style.display = 'block';
+            document.getElementById('text-edit-area').style.display = 'none';
+            textPages = [];
+            pdfDoc = null;
+        });
+
+        popupClose.addEventListener('click', () => {
+            stopSpeech();
+            document.getElementById('popup').style.display = 'none';
+            document.getElementById('popup').classList.remove('visible');
+        });
+
         popupSpeak.addEventListener('click', speakPopup);
         popupStop.addEventListener('click', stopSpeech);
         resultSpeak.addEventListener('click', speakResults);
         resultStop.addEventListener('click', stopSpeech);
         playBtn.addEventListener('click', playSpeech);
         stopBtn.addEventListener('click', stopSpeech);
+        exportBtn.addEventListener('click', exportText);
+
+        editDictionaryBtn.addEventListener('click', () => {
+            editDictionaryForm.classList.toggle('hidden');
+        });
+
+        editDictionaryForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const word = searchInput.value.trim();
+            const english = document.getElementById('edit-english').value.trim();
+            const odia = document.getElementById('edit-odia').value.trim();
+            const odia_spelling = document.getElementById('edit-odia-spelling').value.trim();
+            const odia_meaning = document.getElementById('edit-odia-meaning').value.trim();
+            saveCustomEntry(word, english, odia, odia_spelling, odia_meaning, document.getElementById('results'));
+            editDictionaryForm.classList.add('hidden');
+        });
+
+        textEditBtn.addEventListener('click', toggleEditText);
+
+        document.addEventListener('copy', handleCopy);
+        setupDoubleTapListener();
     }
 
-    exportBtn.addEventListener('click', exportText);
-
-    editDictionaryBtn.addEventListener('click', () => {
-        const form = document.getElementById('edit-dictionary-form');
-        form.classList.toggle('hidden');
-        if (!form.classList.contains('hidden')) {
-            document.getElementById('edit-english').value = '';
-            document.getElementById('edit-odia').value = '';
-            document.getElementById('edit-odia-spelling').value = '';
-            document.getElementById('edit-odia-meaning').value = '';
-        }
-    });
-
-    editDictionaryForm.addEventListener('submit', (event) => {
-        event.preventDefault();
-        const word = document.getElementById('searchInput').value;
-        const english = document.getElementById('edit-english').value;
-        const odia = document.getElementById('edit-odia').value;
-        const odia_spelling = document.getElementById('edit-odia-spelling').value;
-        const odia_meaning = document.getElementById('edit-odia-meaning').value;
-        saveCustomEntry(word, english, odia, odia_spelling, odia_meaning, document.getElementById('results'));
-        editDictionaryForm.classList.add('hidden');
-    });
-
-    textEditBtn.addEventListener('click', toggleEditText);
-
-    document.addEventListener('copy', handleCopy);
-
-    document.getElementById('text-content').addEventListener('dblclick', (event) => {
-        const selection = window.getSelection();
-        const selectedText = selection.toString().trim();
-        if (selectedText && document.getElementById('reader-section').classList.contains('visible')) {
-            showPopup(selectedText);
-        }
-    });
-
-    setupDoubleTapListener();
-}
-
-document.addEventListener('DOMContentLoaded', initializeApp);
+    initializeApp();
 </script>
 </body>
 </html>
-
