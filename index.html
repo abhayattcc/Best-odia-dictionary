@@ -620,6 +620,8 @@
     let isPaused = false;
     let activeUtterances = 0;
     let ocrFileCache = new Map();
+    let lastTappedSentenceIndex = -1;
+    let lastTappedFile = null;
     const cacheName = 'kids-word-adventure-cache-v2';
     const dbFiles = {
         english_odia: './data/english_odia.db.gz',
@@ -746,8 +748,8 @@
     }
 
     function filterTextByLanguage(text, lang) {
-        const odiaRegex = /[\u0B00-\u0B7F\()/,"':;!?.-]+/g;
-        const hindiRegex = /[\u0900-\u097F0-9]+/g;
+        const odiaRegex = /[\u0B00-\u0B7F\0-9()/,"':;!?.-]+/g;
+        const hindiRegex = /[\u0900-\u097F]+/g;
         const englishRegex = /[A-Za-z]+/g;
 
         if (lang.startsWith('or')) {
@@ -804,6 +806,7 @@
                     utterance.lang = voice.lang;
                     utterance.rate = 0.7;
                     utterance.pitch = 1.0;
+                    utterance.volume = 4.0; // 4 times louder
                     utterance.onend = () => {
                         activeUtterances--;
                         if (activeUtterances === 0) {
@@ -1014,6 +1017,7 @@
                     utterance.lang = defaultOdiaVoice.lang;
                     utterance.rate = 0.8;
                     utterance.pitch = 1.0;
+                    utterance.volume = 4.0; // 4 times louder
                     utterance.onend = () => {
                         document.getElementById('result-speak').disabled = false;
                         document.getElementById('result-stop').disabled = true;
@@ -1183,6 +1187,23 @@
         };
     }
 
+    function saveLastTappedPosition(fileName, sentenceIndex, pageIndex) {
+        const positionData = JSON.parse(localStorage.getItem('lastTappedPositions') || '{}');
+        positionData[fileName] = { sentenceIndex, pageIndex };
+        localStorage.setItem('lastTappedPositions', JSON.stringify(positionData));
+    }
+
+    function loadLastTappedPosition(fileName) {
+        const positionData = JSON.parse(localStorage.getItem('lastTappedPositions') || '{}');
+        return positionData[fileName] || null;
+    }
+
+    function clearLastTappedPosition(fileName) {
+        const positionData = JSON.parse(localStorage.getItem('lastTappedPositions') || '{}');
+        delete positionData[fileName];
+        localStorage.setItem('lastTappedPositions', JSON.stringify(positionData));
+    }
+
     function loadTextFile(files) {
         textPages = [];
         const totalFiles = files.length;
@@ -1202,7 +1223,11 @@
                 showProgress('Processing text file', Math.round((processedFiles / totalFiles) * 100));
 
                 if (processedFiles === totalFiles) {
-                    currentPageIndex = 0;
+                    const fileKey = files[0].name;
+                    lastTappedFile = fileKey;
+                    const savedPosition = loadLastTappedPosition(fileKey);
+                    currentPageIndex = savedPosition ? savedPosition.pageIndex : 0;
+                    lastTappedSentenceIndex = savedPosition ? savedPosition.sentenceIndex : -1;
                     renderTextPage();
                     document.getElementById('dictionary-section').classList.add('hidden');
                     document.getElementById('reader-section').classList.add('visible');
@@ -1227,50 +1252,6 @@
             return;
         }
         const langString = langs.join('+');
-        const odiaCharset = 'ଅଆଇଈଉଊଋଌଏଐଓଔକଖଗଘଙଚଛଜଝଞଟଠଡଢଣତଥଦଧନପଫବଭମଯରଲଳଵଶଷସହ଼ାିୀୁୂୃୄେୈୋୌ୍ୟୱ';
-
-        function preprocessCanvas(canvas) {
-            const context = canvas.getContext('2d', { alpha: false });
-            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-            const data = imageData.data;
-
-            // Convert to grayscale
-            for (let i = 0; i < data.length; i += 4) {
-                const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-                data[i] = data[i + 1] = data[i + 2] = avg;
-            }
-
-            // Adaptive thresholding
-            const threshold = 150;
-            for (let i = 0; i < data.length; i += 4) {
-                const brightness = data[i];
-                const value = brightness > threshold ? 255 : 0;
-                data[i] = data[i + 1] = data[i + 2] = value;
-            }
-
-            // Noise reduction (simple 3x3 median filter)
-            const width = canvas.width;
-            const height = canvas.height;
-            const tempData = context.getImageData(0, 0, width, height);
-            for (let y = 1; y < height - 1; y++) {
-                for (let x = 1; x < width - 1; x++) {
-                    const pixels = [];
-                    for (let dy = -1; dy <= 1; dy++) {
-                        for (let dx = -1; dx <= 1; dx++) {
-                            const i = ((y + dy) * width + (x + dx)) * 4;
-                            pixels.push(data[i]);
-                        }
-                    }
-                    pixels.sort((a, b) => a - b);
-                    const median = pixels[4];
-                    const i = (y * width + x) * 4;
-                    tempData.data[i] = tempData.data[i + 1] = tempData.data[i + 2] = median;
-                }
-            }
-
-            context.putImageData(tempData, 0, 0);
-            return canvas;
-        }
 
         try {
             showProgress('Processing OCR', 0);
@@ -1301,7 +1282,6 @@
                                         viewport: viewport,
                                         renderInteractiveForms: false
                                     }).promise;
-                                    preprocessCanvas(canvas);
                                     const pageKey = `${fileKey}_page${pageIndex}`;
                                     let pageText = ocrFileCache.get(pageKey);
                                     if (!pageText) {
@@ -1315,23 +1295,17 @@
                                             workerPath: './js/worker.min.js',
                                             corePath: './js/tesseract-core.wasm.js',
                                             langPath: './lang-data/',
+                                            tessedit_ocr_engine_mode: 2,
                                             tessedit_pageseg_mode: 3,
-                                            tessedit_dpi: 300,
-                                            tessedit_char_whitelist: odiaCharset,
-                                            tessedit_min_confidence: 85,
+                                            tessedit_dpi: 400,
                                             preserve_interword_spaces: 1,
-                                            tessedit_create_hocr: 0,
-                                            tessedit_create_tsv: 0,
+                                            tessedit_create_hocr: 1,
+                                            tessedit_create_tsv: 1,
                                             tessedit_create_box: 0,
                                             tessedit_create_unlv: 0,
                                             tessedit_create_osd: 0
                                         });
-                                        pageText = data.words
-                                            .filter(word => word.confidence > 85)
-                                            .map(word => word.text)
-                                            .join(' ')
-                                            .replace(/\s+/g, ' ')
-                                            .trim();
+                                        pageText = data.text.trim();
                                         ocrFileCache.set(pageKey, pageText);
                                     }
                                     textPages.push(pageText);
@@ -1358,7 +1332,6 @@
                                 canvas.height = img.height * scale;
                                 const context = canvas.getContext('2d', { alpha: false });
                                 context.drawImage(img, 0, 0, canvas.width, canvas.height);
-                                preprocessCanvas(canvas);
                                 let imageText = ocrFileCache.get(fileKey);
                                 if (!imageText) {
                                     const { data } = await Tesseract.recognize(canvas, langString, {
@@ -1371,23 +1344,17 @@
                                         workerPath: './js/worker.min.js',
                                         corePath: './js/tesseract-core.wasm.js',
                                         langPath: './lang-data/',
-                                        tessedit_pageseg_mode: 6,
-                                        tessedit_dpi: 300,
-                                        tessedit_char_whitelist: odiaCharset,
-                                        tessedit_min_confidence: 85,
+                                        tessedit_ocr_engine_mode: 2,
+                                        tessedit_pageseg_mode: 3,
+                                        tessedit_dpi: 400,
                                         preserve_interword_spaces: 1,
-                                        tessedit_create_hocr: 0,
-                                        tessedit_create_tsv: 0,
+                                        tessedit_create_hocr: 1,
+                                        tessedit_create_tsv: 1,
                                         tessedit_create_box: 0,
                                         tessedit_create_unlv: 0,
                                         tessedit_create_osd: 0
                                     });
-                                    imageText = data.words
-                                        .filter(word => word.confidence > 85)
-                                        .map(word => word.text)
-                                        .join(' ')
-                                        .replace(/\s+/g, ' ')
-                                        .trim();
+                                    imageText = data.text.trim();
                                     ocrFileCache.set(fileKey, imageText);
                                 }
                                 textPages.push(imageText);
@@ -1406,7 +1373,11 @@
                 processedFiles++;
             }
 
-            currentPageIndex = 0;
+            const fileKey = files[0].name;
+            lastTappedFile = fileKey;
+            const savedPosition = loadLastTappedPosition(fileKey);
+            currentPageIndex = savedPosition ? savedPosition.pageIndex : 0;
+            lastTappedSentenceIndex = savedPosition ? savedPosition.sentenceIndex : -1;
             renderTextPage();
             document.getElementById('dictionary-section').classList.add('hidden');
             document.getElementById('reader-section').classList.add('visible');
@@ -1432,7 +1403,7 @@
             `<span data-sentence-index="${index}">${line.trim()}</span>`
         ).join('<br>');
         textContentDiv.style.display = 'block';
-        currentSentenceIndex = -1;
+        currentSentenceIndex = lastTappedSentenceIndex >= 0 ? lastTappedSentenceIndex : -1;
         updatePagination();
     }
 
@@ -1467,7 +1438,11 @@
         if (newIndex >= 0 && newIndex < textPages.length) {
             stopSpeech();
             currentPageIndex = newIndex;
+            lastTappedSentenceIndex = -1; // Reset on page change
             renderTextPage();
+            if (lastTappedFile) {
+                saveLastTappedPosition(lastTappedFile, lastTappedSentenceIndex, currentPageIndex);
+            }
         }
     }
 
@@ -1506,7 +1481,11 @@
                 await processFile(file);
                 processedFiles++;
             }
-            currentPageIndex = 0;
+            const fileKey = files[0].name;
+            lastTappedFile = fileKey;
+            const savedPosition = loadLastTappedPosition(fileKey);
+            currentPageIndex = savedPosition ? savedPosition.pageIndex : 0;
+            lastTappedSentenceIndex = savedPosition ? savedPosition.sentenceIndex : -1;
             renderTextPage();
             document.getElementById('dictionary-section').classList.add('hidden');
             document.getElementById('reader-section').classList.add('visible');
@@ -1603,6 +1582,7 @@
                     utterance.lang = voice.lang;
                     utterance.rate = 0.7;
                     utterance.pitch = 1.0;
+                    utterance.volume = 4.0; // 4 times louder
                     utterance.onend = () => {
                         activeUtterances--;
                         if (activeUtterances === 0) {
@@ -1651,7 +1631,7 @@
         stopSpeech();
         isReadingAloud = true;
         isPaused = false;
-        currentSentenceIndex = currentSentenceIndex >= sentences.length - 1 ? 0 : currentSentenceIndex + 1;
+        currentSentenceIndex = lastTappedSentenceIndex >= 0 ? lastTappedSentenceIndex : (currentSentenceIndex >= sentences.length - 1 ? 0 : currentSentenceIndex + 1);
         document.getElementById('play-btn').textContent = '⏸️';
         document.getElementById('processing-status').textContent = 'Reading...';
         readNextSentence();
@@ -1664,6 +1644,10 @@
         }
         if (currentSentenceIndex >= sentences.length || !isReadingAloud) {
             stopSpeech();
+            if (currentSentenceIndex >= sentences.length && lastTappedFile) {
+                clearLastTappedPosition(lastTappedFile);
+                lastTappedSentenceIndex = -1;
+            }
             return;
         }
         const sentenceSpans = document.getElementById('text-content').querySelectorAll('span');
@@ -1695,15 +1679,23 @@
                     utterance.lang = voice.lang;
                     utterance.rate = 0.7;
                     utterance.pitch = 1.0;
+                    utterance.volume = 4.0; // 4 times louder
                     utterance.onend = () => {
                         activeUtterances--;
                         if (activeUtterances === 0 && isReadingAloud) {
                             if (currentSentenceIndex < sentences.length - 1) {
                                 currentSentenceIndex++;
+                                if (lastTappedFile) {
+                                    saveLastTappedPosition(lastTappedFile, currentSentenceIndex, currentPageIndex);
+                                }
                                 readNextSentence();
                             } else {
                                 stopSpeech();
                                 document.getElementById('processing-status').textContent = 'Finished reading page';
+                                if (lastTappedFile) {
+                                    clearLastTappedPosition(lastTappedFile);
+                                    lastTappedSentenceIndex = -1;
+                                }
                             }
                         }
                     };
@@ -1775,15 +1767,15 @@
 
         const textContentDiv = document.getElementById('text-content');
         const touch = event.changedTouches[0];
-        const range = document.caretRangeFromPoint(touch.clientX, touch.clientY);
+        const element = document.elementFromPoint(touch.clientX, touch.clientY);
 
-        if (!range) return;
-
-        range.expand('word');
-        const selectedText = range.toString().trim();
-
-        if (selectedText) {
-            showPopup(selectedText);
+        if (element && element.tagName === 'SPAN' && element.hasAttribute('data-sentence-index')) {
+            const sentenceIndex = parseInt(element.getAttribute('data-sentence-index'), 10);
+            lastTappedSentenceIndex = sentenceIndex;
+            if (lastTappedFile) {
+                saveLastTappedPosition(lastTappedFile, lastTappedSentenceIndex, currentPageIndex);
+            }
+            showPopup(element.textContent.trim());
         }
     }
 
@@ -1801,30 +1793,6 @@
                 handleDoubleTap(event);
             }
             lastTapTime = currentTime;
-        });
-    }
-
-    function debounce(func, wait) {
-        return function(...args) {
-            clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(() => func.apply(this, args), wait);
-        };
-    }
-
-    function initializeApp() {
-        // Other initialization code remains unchanged
-        const searchInput = document.getElementById('searchInput');
-        const debouncedSuggestions = debounce((word) => {
-            loadSuggestions(word);
-        }, 500);
-
-        searchInput.addEventListener('input', () => {
-            const word = searchInput.value;
-            const suggestionsUl = document.getElementById('suggestions');
-            suggestionsUl.classList.remove('visible');
-            suggestionsUl.classList.add('hidden');
-            suggestionsUl.innerHTML = '';
-            debouncedSuggestions(word);
         });
     }
 
@@ -1872,6 +1840,9 @@
     async function initializeApp() {
         if (!localStorage.getItem('customDictionary')) {
             localStorage.setItem('customDictionary', JSON.stringify({}));
+        }
+        if (!localStorage.getItem('lastTappedPositions')) {
+            localStorage.setItem('lastTappedPositions', JSON.stringify({}));
         }
 
         const isCached = localStorage.getItem('cachePopulated') === 'true' && await isCachePopulated();
@@ -1976,6 +1947,8 @@
             document.getElementById('text-edit-area').style.display = 'none';
             textPages = [];
             pdfDoc = null;
+            lastTappedFile = null;
+            lastTappedSentenceIndex = -1;
         });
 
         popupClose.addEventListener('click', () => {
